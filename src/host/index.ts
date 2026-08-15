@@ -1,7 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { isLoopbackRequest, readJsonBody } from './http.js'
-import { listDirectory } from './list.js'
+import { runNativePicker } from './native-pick.js'
 
 export const name = 'dsh-file-picker'
 
@@ -40,7 +40,7 @@ export function apply(ctx: Context): void {
 
   ctx.effect(() => ctx.webServer.register({
     kind: 'exact',
-    path: '/api/dsh-file-picker/list',
+    path: '/api/dsh-file-picker/native-pick',
     handler: async (req: IncomingMessage, res: ServerResponse) => {
       if (!isLoopbackRequest(req)) {
         writeJson(res, 403, { error: 'forbidden: loopback-only' })
@@ -55,11 +55,11 @@ export function apply(ctx: Context): void {
         writeJson(res, 400, { error: 'invalid JSON body' })
         return
       }
-      const requested = typeof body.path === 'string' ? body.path : undefined
+      const initialDir = typeof body.initialDir === 'string' ? body.initialDir : undefined
       try {
-        writeJson(res, 200, await listDirectory(requested))
+        writeJson(res, 200, await runNativePicker(initialDir))
       } catch (error) {
-        writeJson(res, 400, { error: error instanceof Error ? error.message : String(error) })
+        writeJson(res, 500, { error: error instanceof Error ? error.message : String(error) })
       }
     },
   }), 'dsh-file-picker: routes')
