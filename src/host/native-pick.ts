@@ -29,7 +29,7 @@ export function buildPickerScript(initialDir: string | undefined): string {
   }
   lines.push(
     '$r = $d.ShowDialog()',
-    "if ($r -eq [System.Windows.Forms.DialogResult]::OK) { $d.FileNames | ConvertTo-Json -Compress } else { 'CANCELED' }",
+    "if ($r -eq [System.Windows.Forms.DialogResult]::OK) { @($d.FileNames) | ConvertTo-Json -Compress } else { 'CANCELED' }",
   )
   return lines.join('\n')
 }
@@ -40,6 +40,11 @@ export function parsePickerOutput(out: string): NativePickResult {
   if (trimmed === '' || trimmed === 'CANCELED') return { paths: [], canceled: true }
   try {
     const parsed = JSON.parse(trimmed) as unknown
+    if (typeof parsed === 'string') {
+      // @() in the script forces arrays, but tolerate a bare JSON string
+      // (single-element pipeline unwrap) defensively.
+      return { paths: parsed === '' ? [] : [parsed], canceled: false }
+    }
     const paths = Array.isArray(parsed) ? parsed.filter((p): p is string => typeof p === 'string') : []
     return { paths, canceled: false }
   } catch {

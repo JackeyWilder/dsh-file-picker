@@ -10,6 +10,9 @@ describe('buildPickerScript', () => {
     expect(script).toContain("$d.Filter = '所有文件 (*.*)|*.*'")
     expect(script).toContain('CANCELED')
   })
+  it('wraps FileNames in @() so a single-file pick emits a JSON array', () => {
+    expect(buildPickerScript(undefined)).toContain('@($d.FileNames)')
+  })
   it('emits no InitialDirectory when initialDir is omitted', () => {
     expect(buildPickerScript(undefined)).not.toContain('InitialDirectory')
   })
@@ -30,6 +33,9 @@ describe('parsePickerOutput', () => {
   })
   it('treats empty output as canceled', () => {
     expect(parsePickerOutput('  \n')).toEqual({ paths: [], canceled: true })
+  })
+  it('wraps a single JSON string path into a single-element array', () => {
+    expect(parsePickerOutput('"C:\\\\a.txt"')).toEqual({ paths: ['C:\\a.txt'], canceled: false })
   })
   it('treats garbage output as canceled', () => {
     expect(parsePickerOutput('{oops')).toEqual({ paths: [], canceled: true })
