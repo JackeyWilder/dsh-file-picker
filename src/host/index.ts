@@ -5,7 +5,22 @@ import { listDirectory } from './list.js'
 
 export const name = 'dsh-file-picker'
 
-export const inject = ['webServer']
+export const inject = ['webServer', 'systemPrompt']
+
+/**
+ * Model-facing hint: `@path:` draft refs tell the agent to read the file.
+ * systemPrompt is a host-only service (dsh-system-prompt mounts it in the host
+ * bundle; dsh-ssh/dsh-host-files call ctx.systemPrompt.section() from their
+ * host apply). cordis Context in this repo declares neither `webServer` nor
+ * `systemPrompt`, so the minimal structural cast below covers only the
+ * compile-time gap — at runtime the fiber waits on the injected service.
+ */
+const PATH_HINT =
+  '用户消息中的 `@path: <绝对路径>` 表示要你读取的文件。用 read 工具读取其内容后再继续。'
+
+type SystemPromptFace = {
+  section(section: { name: string; order: number; text: string }): () => void
+}
 
 function writeJson(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body)
@@ -17,6 +32,12 @@ function writeJson(res: ServerResponse, status: number, body: unknown): void {
 }
 
 export function apply(ctx: Context): void {
+  ctx.effect(() => (ctx as unknown as { systemPrompt: SystemPromptFace }).systemPrompt.section({
+    name: 'dsh-file-picker',
+    order: 200,
+    text: PATH_HINT,
+  }), 'dsh-file-picker: system prompt')
+
   ctx.effect(() => ctx.webServer.register({
     kind: 'exact',
     path: '/api/dsh-file-picker/list',
