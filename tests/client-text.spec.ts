@@ -1,6 +1,6 @@
 // tests/client-text.spec.ts
 import { describe, it, expect } from 'vitest'
-import { buildPathInjection } from '../src/client/text.js'
+import { buildPathInjection, lastDirOf } from '../src/client/text.js'
 
 describe('buildPathInjection', () => {
   it('injects a single path when draft is empty', () => {
@@ -20,5 +20,17 @@ describe('buildPathInjection', () => {
   })
   it('returns the draft unchanged for an empty selection', () => {
     expect(buildPathInjection([], 'hi')).toBe('hi')
+  })
+})
+
+describe('lastDirOf', () => {
+  it('takes the directory of the first picked path', () => {
+    expect(lastDirOf(['C:\\dev\\a.txt', 'C:\\dev\\b.txt'])).toBe('C:\\dev')
+  })
+  it('returns undefined when the path has no backslash', () => {
+    expect(lastDirOf(['C:file.txt'])).toBeUndefined()
+  })
+  it('returns undefined for an empty selection', () => {
+    expect(lastDirOf([])).toBeUndefined()
   })
 })
