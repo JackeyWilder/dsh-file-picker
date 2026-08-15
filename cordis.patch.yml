@@ -1,0 +1,5 @@
+# dsh-file-picker: file browser for the web input tool row.
+# Installed as a dsh profile patch layer (dsh.bundle.patch).
+- insert:
+    - id: dsh-file-picker
+      name: dsh-file-picker
