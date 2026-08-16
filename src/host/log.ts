@@ -4,6 +4,11 @@
 // or the log itself pinpoints which stage of the stage → inbox-inserted →
 // inject pipeline ran. Best-effort: a write failure must never break the
 // plugin's routes or listeners.
+//
+// Privacy default: full absolute paths are NOT written by default. Paths are
+// redacted to their drive + basename (`G:\...\README.md`), which keeps the
+// debug signal (which file, which session) without recording the user's full
+// directory tree. Set DSH_FILE_PICKER_DEBUG=1 to log full paths.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -13,6 +18,9 @@ const MAX_LOG_BYTES = 1024 * 1024
 
 const logDir = process.env.DSH_HOME ?? join(homedir(), '.dsh')
 const logPath = join(logDir, 'logs', 'dsh-file-picker.log')
+
+/** Opt into full-path logging; absent/0 logs redacted paths only. */
+const debugLogging = process.env.DSH_FILE_PICKER_DEBUG === '1'
 
 /**
  * Plugin version, read from the installed package.json so it can never drift
@@ -32,6 +40,17 @@ function readPluginVersion(): string {
 /** Plugin version, embedded in every log line to prove which bundle ran. */
 export const PLUGIN_VERSION = readPluginVersion()
 
+/**
+ * Redact an absolute path for privacy-safe logging: drive + `...` + basename.
+ * `G:\Dev\project\src\README.md` → `G:\...\README.md`. Full paths are logged
+ * only when DSH_FILE_PICKER_DEBUG=1.
+ */
+export function redactPath(path: string): string {
+  const drive = /^[A-Za-z]:/.exec(path)?.[0]
+  const base = path.slice(drive === undefined ? 0 : drive.length).split(/[\\/]/).filter(Boolean).pop() ?? ''
+  return drive === undefined ? `...\\${base}` : `${drive}\\...\\${base}`
+}
+
 export function hostLog(line: string): void {
   try {
     mkdirSync(join(logDir, 'logs'), { recursive: true })
@@ -42,4 +61,9 @@ export function hostLog(line: string): void {
   } catch {
     // diagnostics only
   }
+}
+
+/** Redact a list of file paths per the privacy default (debug off). */
+export function redactList(paths: readonly string[]): string {
+  return paths.map(debugLogging ? (p) => p : redactPath).join(' | ')
 }

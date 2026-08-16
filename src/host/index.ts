@@ -3,7 +3,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { isLoopbackRequest, readJsonBody } from './http.js'
 import { buildInjectSource, buildInjectText, type AttachedFile } from './inject.js'
-import { hostLog, PLUGIN_VERSION } from './log.js'
+import { hostLog, PLUGIN_VERSION, redactList } from './log.js'
 import { runNativePicker } from './native-pick.js'
 
 export const name = '@jackeywilder/dsh-file-picker'
@@ -152,7 +152,7 @@ export function apply(ctx: Context): void {
         hostLog(`stage: cleared session=${sessionId}`)
       } else {
         stagedFiles.set(sessionId, files)
-        hostLog(`stage: ${files.length} file(s) for session=${sessionId}: ${files.map((f) => f.path).join(' | ')}`)
+        hostLog(`stage: ${files.length} file(s) for session=${sessionId}: ${redactList(files.map((f) => f.path))}`)
       }
       writeJson(res, 200, { ok: true })
     },

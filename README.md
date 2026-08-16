@@ -53,4 +53,9 @@ npx vitest run
 
 宿主侧路由仅接受 loopback 请求（`isLoopbackRequest` 校验 remoteAddress/Host/sec-fetch-site/Origin）；只提供只读原生文件选择能力，不读文件内容、不写文件。选择过程不留 sidecar 残留：pwsh 以 `-EncodedCommand` 内联执行对话框脚本，不落临时脚本文件，对话框关闭后进程即被终止。
 
-**隐私**：选中的文件路径会写入上述诊断日志（含用户名等路径信息），且注入到会话上下文后 agent 可读取。请勿用于机密文件，或自行删除日志。
+**隐私与数据流**：
+
+- 选中文件的路径**仅在本机处理**：浏览器 POST 到本地宿主进程（`127.0.0.1`，loopback-only），不经任何外部网络；插件不读取、不上传文件内容。
+- 路径注入会话上下文后，**agent 可见并可读取文件内容**——这是功能本质（agent 需要路径才能读取），请勿附加机密文件。
+- 诊断日志（`<DSH_HOME>/logs/dsh-file-picker.log`，默认 `C:\Users\<你>\.dsh\logs\`）默认**只记录脱敏路径**（盘符 + `...` + 文件名，如 `G:\...\README.md`），不记录完整目录；设置环境变量 `DSH_FILE_PICKER_DEBUG=1` 才记录完整路径。日志超过 1 MB 自动轮转为 `.log.1`，可随时安全删除。
+- 宿主侧路由仅接受 loopback 请求（`isLoopbackRequest` 校验 remoteAddress/Host/sec-fetch-site/Origin），外部进程无法调用。
