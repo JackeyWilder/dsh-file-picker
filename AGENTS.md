@@ -9,7 +9,7 @@ dsh-file-picker —— dsh web（DeepSeek Harness）的原生 Windows 文件选�
   浏览器侧 `src/client/*`（CJS 闭包 → `lib/client.js`）经 `cordis.patch.yml` 声明 slot 注入 UI。
 - 安装：dsh profile `package.json` 以 `link:G:/Dev/agent/dsh plugins/dsh-file-picker` 安装；
   改 `lib/` 重建后宿主重启生效；浏览器端旧 bundle 需 Ctrl+Shift+R。
-- 一键命令：`pnpm build`（tsdown 转译）；`pnpm vitest run`（基线 54 个测试）。
+- 一键命令：`pnpm build`（tsdown 转译）；`pnpm vitest run`（基线 55 个测试）。
 - 发布：npm 公开 `@jackeywilder/dsh-file-picker`；GitHub 公开 `JackeyWilder/dsh-file-picker`。
 
 ## 2. 硬性红线（违反即事故）
@@ -49,13 +49,14 @@ dsh-file-picker —— dsh web（DeepSeek Harness）的原生 Windows 文件选�
 
 改动必须全部满足：
 1. `pnpm build` 通过；
-2. `pnpm vitest run` 全绿（基线 54 个）；涉及 host spawn 类须同步维护测试；
+2. `pnpm vitest run` 全绿（基线 55 个）；涉及 host spawn 类须同步维护测试；
 3. 涉及 UI 的改动，交付说明附 Ctrl+Shift+R 验证提示；
 4. 类型正确性不以 build 通过为证据；
 5. 验证命令被沙箱/环境拦截时：如实报告并申请更高权限；【禁止】跳过验证却声称"已完成/已通过"。
 
 ## 5. 流程摘要
 
+- **开发流**：功能开发一律在 `feature/*` / `fix/*` 分支进行，经 Pull Request 合入 `main`；`main` 受分支保护（禁直推、CI `build-test` 必须绿），不存在直推 main；PR 描述用 `.github/pull_request_template.md` 模板；合入 `main` 前需用户确认。
 - **issue**：GitHub Issues（`gh issue create`）；分类标签 `needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix`。
 - **架构决策（ADR 纪律）**：改动若与既定决策（WinForms 对话框、inbox/inserted 注入、TopMost 置顶、隐私脱敏）冲突，禁止静默推翻——先读 `docs/adr/`，理由与后果记录为新 ADR（MADR 风格）。
 - **发布**：改 `package.json` version 必须同步 git tag（publish.yml 校验 tag==version）；打 `v*` tag 并 push 触发自动发布，禁止手动 `npm publish` 绕过；本机发布用 npm CLI 而非 pnpm；scoped 包 `--access public`；NPM_TOKEN 只存 GitHub secret（红线 4）；CDN 4-5 分钟传播延迟属正常。

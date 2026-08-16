@@ -125,6 +125,12 @@ dsh plugin --profile web remove @jackeywilder/dsh-file-picker
 - **卡片条在输入框上方**：dsh 没有输入框内部附件插槽，卡片渲染于 `conversation.input.dock`。
 - **依赖半公开接口**：`agent.inject` / `agent/inbox/inserted` 属 dsh 半公开能力，dsh 升级后可能变化，升级后用[故障排查](#故障排查)自检。
 
+## 开发流程
+
+- 所有改动在 `feature/*` / `fix/*` 分支上进行，经 Pull Request 合入 `main`；
+- `main` 受分支保护：禁止直接推送，PR 必须通过 CI（`build-test`）才能合并；
+- PR 描述请使用仓库内置模板（`.github/pull_request_template.md`）。
+
 ## 开发与验证
 
 ```sh
