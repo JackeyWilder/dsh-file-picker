@@ -37,7 +37,7 @@ type AgentEventsFace = {
 }
 
 interface AgentInboxInsertedPayload {
-  agent: { sessionId: string; inject(message: unknown): void }
+  agent: { id: string; inject(message: unknown): void }
   message: { source: { kind: string } }
 }
 
@@ -80,20 +80,20 @@ export function apply(ctx: Context): void {
   // paths as model-facing context for the next pre-step of that same turn, so
   // the context message always rides the message that just went out.
   ;(ctx as unknown as AgentEventsFace).on('agent/inbox/inserted', ({ agent, message }) => {
-    hostLog(`inbox/inserted: kind=${message.source.kind} session=${agent.sessionId}`)
+    hostLog(`inbox/inserted: kind=${message.source.kind} session=${agent.id}`)
     if (message.source.kind !== 'user') return
-    const pending = stagedFiles.get(agent.sessionId)
+    const pending = stagedFiles.get(agent.id)
     if (pending === undefined || pending.length === 0) {
-      hostLog(`inbox/inserted: nothing staged for session=${agent.sessionId}`)
+      hostLog(`inbox/inserted: nothing staged for session=${agent.id}`)
       return
     }
-    stagedFiles.delete(agent.sessionId)
+    stagedFiles.delete(agent.id)
     try {
       agent.inject(createUserMessage({
         source: buildInjectSource(),
         content: [{ type: 'text', text: buildInjectText(pending) }],
       }))
-      hostLog(`inbox/inserted: injected ${pending.length} file(s) for session=${agent.sessionId}`)
+      hostLog(`inbox/inserted: injected ${pending.length} file(s) for session=${agent.id}`)
     } catch (error) {
       hostLog(`inbox/inserted: inject failed: ${error instanceof Error ? error.message : String(error)}`)
     }
