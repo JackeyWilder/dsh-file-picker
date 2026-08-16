@@ -48,10 +48,13 @@ export function baseNameOf(path: string): string {
  * Add files to the rail, deduplicating on absolute path. Empty selections are
  * a no-op. Returns the merged snapshot.
  */
-export function addFiles(paths: readonly string[]): readonly RailFile[] {
-  if (paths.length === 0) return cards
+export function addFiles(paths: readonly string[] | string): readonly RailFile[] {
+  // A bare string (e.g. a single path from a stale bundle or a direct caller)
+  // must not be iterated character-by-character into per-char cards.
+  const list = typeof paths === 'string' ? [paths] : paths
+  if (list.length === 0) return cards
   const merged = cards.slice()
-  for (const path of paths) {
+  for (const path of list) {
     if (typeof path === 'string' && path !== '' && !merged.some((c) => c.path === path)) {
       merged.push({ path, name: baseNameOf(path) })
     }
