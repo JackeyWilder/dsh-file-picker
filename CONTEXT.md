@@ -23,3 +23,4 @@ composer 工具行 📎 → 原生 Windows 文件对话框（多选、记住上�
 - 插件经 `link:` 安装：改 `lib/` 重建即生效（宿主重启加载），浏览器端旧 bundle 需 Ctrl+Shift+R；
 - 运行日志 `~/.dsh/logs/dsh-file-picker.log`（1MB 轮转）；dsh 主 shell 日志 `~/.dsh/dsh-launcher/shell.log`；
 - 仓库无 tsconfig.json：类型正确性靠测试 + 构建 + review 兜底（tsdown 只转译不检查类型）。
+- 授权边界：审批策略 never + 文件 full-access → 护栏内建于 docs/agents/authorization.md（破坏性 / 工作区外写改需汇报四要素并获同意）。
