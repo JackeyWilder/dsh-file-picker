@@ -56,14 +56,16 @@ export function parsePickerOutput(out: string): NativePickResult {
 }
 
 /**
- * Show the native picker by running pwsh (feeds the script via stdin so no
- * temp file is needed). Throws a readable error when pwsh is unavailable.
+ * Show the native picker by running pwsh. The script is passed as a
+ * UTF-16LE Base64 -EncodedCommand (pwsh-native, no temp file); feeding it
+ * via stdin does not work here because execFile's input never closes the
+ * pipe, so pwsh -Command - blocks forever waiting for EOF.
  */
 export async function runNativePicker(initialDir: string | undefined, signal?: AbortSignal): Promise<NativePickResult> {
   let stdout: string
   try {
-    const result = await execFileAsync('pwsh', ['-NoProfile', '-NonInteractive', '-Command', '-'], {
-      input: buildPickerScript(initialDir),
+    const encoded = Buffer.from(buildPickerScript(initialDir), 'utf16le').toString('base64')
+    const result = await execFileAsync('pwsh', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], {
       maxBuffer: 4 * 1024 * 1024,
       windowsHide: true,
       encoding: 'utf8',
