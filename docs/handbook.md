@@ -6,7 +6,11 @@
 
 1. **对话框被压到前台窗口后面（最严重）**：dsh 服务 spawn 的 pwsh 无前台激活权限，Windows 前台锁把模态对话框开在其它窗口之后——可见但点不到 → `ShowDialog()` 永久阻塞 → `runNativePicker` promise 永不 resolve → 📎 永久 disabled，整个插件失效。
    修复：脚本内建透明 TopMost owner（`Opacity=0`、1x1、`Location=(-32000,-32000)`、`ShowInTaskbar=$false`）→ `ShowDialog($owner)`；另加 `PICKER_STUCK_TIMEOUT_MS = 10min` 超时兜底，超时 kill 子进程并按取消处理。
-2. **explorer 定位不生效（2026-08-17 实测定案）**：`spawn('explorer', ['/select,"<path>"'])` 虽不经 shell，但 Node 的 libuv 会把含空格 + 内部引号的 argv 拼成 `"/select,\"...\""`（内部引号转义为 `\"`），explorer.exe 不认 `\"` → 进程启动但**无窗口、空转残留**（多个此类进程可堆到 10+）。修复：`spawn('explorer', [arg], { shell: true })`——经 cmd.exe 原样传递引号段；路径中 `%` 加倍防 cmd 变量展开，`"` 双写兜底（NTFS 文件名本不允许 `"`）。已实测：同路径直传无窗口 vs shell 传参正常弹出资源管理器窗口。
+2. **explorer 定位不生效 + 不置顶（2026-08-17 实测定案）**：
+   - 直传 `spawn('explorer', ['/select,"<path>"'])`：Node libuv 把含空格 + 内部引号的 argv 拼成 `"/select,\"...\""`（内部引号转义为 `\"`），explorer 不认 → 进程启动但**无窗口、空转残留**（可堆到 10+）。
+   - `shell:true` 经 cmd 原样传引号：窗口能弹出，但 Windows 前台锁把它压在后台。
+   - 最终方案：spawn pwsh（`-EncodedCommand`，与 picker 同构）执行 `Start-Process explorer.exe -ArgumentList '/select,"<path>"'`（引号原样到达），轮询 `Get-Process explorer` 匹配 `MainWindowTitle.Contains(<父目录>)`——**explorer 窗口标题只含父目录路径 + " - 文件资源管理器"，永远不含文件名**，按文件名匹配必失败；随后 `ShowWindow(SW_RESTORE)` + `keybd_event` ALT 注入 + `SetForegroundWindow` 解锁前台。脚本内自验：SetForegroundWindow 后 300ms 前台即 explorer。
+   - 注意：用户随后手动点击其它窗口会把前台带走——Windows 前台锁的正确语义，不算故障。
 3. **`agent.sessionId` 是 undefined**：Agent 接口字段是 `id`。用 `agent.id` 做 session key。
 4. **pwsh 7 不能 cast `__ComObject` 到自定义 `[ComImport]` 接口**：COM 逻辑必须放进 `Add-Type` 的 C# static method（如 `FpPicker.Show()`）。
 5. **IFileDialog vtable 计数错误导致 AccessViolationException**：IFileDialog 有 23 个方法（无 `GetFileTypeCount`），多写一个 slot 全偏移。

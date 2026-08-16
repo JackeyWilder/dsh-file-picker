@@ -17,39 +17,51 @@ function fakeChild(): EventEmitter {
   return child as EventEmitter & { unref: ReturnType<typeof vi.fn> }
 }
 
+/** Decode the -EncodedCommand payload the same way pwsh would. */
+function decodeEncodedCommand(call: unknown[]): string {
+  const args = (call as Array<unknown>)[1] as string[]
+  const b64 = args[args.indexOf('-EncodedCommand') + 1]
+  return Buffer.from(b64, 'base64').toString('utf16le')
+}
+
 describe('revealPath', () => {
-  it('spawns explorer through the shell with /select,"<path>", detached and unrefed', () => {
+  it('spawns pwsh with an encoded script that runs Start-Process explorer', () => {
     const child = fakeChild()
     spawnMock.mockReturnValue(child)
     revealPath('G:\\Dev\\project\\README.md')
     expect(spawnMock).toHaveBeenCalledWith(
-      'explorer',
-      ['/select,"G:\\Dev\\project\\README.md"'],
+      'pwsh',
+      expect.arrayContaining(['-NoProfile', '-NonInteractive', '-EncodedCommand', expect.any(String)]),
       {
         windowsHide: true,
-        detached: true,
         stdio: 'ignore',
-        shell: true,
       },
     )
     expect(child.unref).toHaveBeenCalled()
   })
 
-  it('quotes paths with spaces so explorer does not truncate them', () => {
+  it('embeds the path and parent dir in the script, quotes them for /select, and unlocks the foreground', () => {
     const child = fakeChild()
     spawnMock.mockReturnValue(child)
     revealPath('C:\\My Docs\\a file.txt')
-    expect(spawnMock).toHaveBeenCalledWith(
-      'explorer',
-      ['/select,"C:\\My Docs\\a file.txt"'],
-      expect.objectContaining({ detached: true, shell: true, stdio: 'ignore' }),
-    )
+    const script = decodeEncodedCommand(spawnMock.mock.calls[0])
+    expect(script).toContain("$p = 'C:\\My Docs\\a file.txt'")
+    expect(script).toContain("$dir = 'C:\\My Docs'")
+    expect(script).toContain("$arg = '/select,\"' + $p + '\"'")
+    expect(script).toContain('Start-Process -FilePath explorer.exe -ArgumentList $arg')
+    // Foreground unlock: poll for the window (matched on the parent dir —
+    // explorer titles never include the file name), restore, ALT-unlock, activate.
+    expect(script).toContain('$_.MainWindowTitle.Contains($dir)')
+    expect(script).toContain('[FpReveal]::ShowWindow($win.MainWindowHandle, 9)')
+    expect(script).toContain('[FpReveal]::keybd_event(0x12, 0, 0, [UIntPtr]::Zero)')
+    expect(script).toContain('[FpReveal]::SetForegroundWindow($win.MainWindowHandle)')
   })
 
-  it('doubles % so cmd cannot expand env-like segments in the path', () => {
+  it("doubles single quotes in the path so the pwsh string literal stays intact", () => {
     const child = fakeChild()
     spawnMock.mockReturnValue(child)
-    revealPath('C:\\a%b\\file.txt')
-    expect(spawnMock).toHaveBeenCalledWith('explorer', ['/select,"C:\\a%%b\\file.txt"'], expect.anything())
+    revealPath("C:\\it's here\\file.txt")
+    const script = decodeEncodedCommand(spawnMock.mock.calls[0])
+    expect(script).toContain("$p = 'C:\\it''s here\\file.txt'")
   })
 })
