@@ -1,7 +1,4 @@
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
-
-const execFileAsync = promisify(execFile)
+import { spawn } from 'node:child_process'
 
 export interface NativePickResult {
   paths: string[]
@@ -16,6 +13,9 @@ export interface NativePickResult {
 export function buildPickerScript(initialDir: string | undefined): string {
   const esc = (s: string) => s.replace(/'/g, "''")
   const lines = [
+    // -EncodedCommand runs without a console, so stdout falls back to the
+    // system ANSI codepage (GBK on zh-CN) which corrupts non-ASCII paths.
+    '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
     'Add-Type -AssemblyName System.Windows.Forms',
     // Without this, an OpenFileDialog shown as the process's first UI element
     // blocks without ever creating a visible window (pwsh WinForms quirk).
@@ -57,26 +57,63 @@ export function parsePickerOutput(out: string): NativePickResult {
 
 /**
  * Show the native picker by running pwsh. The script is passed as a
- * UTF-16LE Base64 -EncodedCommand (pwsh-native, no temp file); feeding it
- * via stdin does not work here because execFile's input never closes the
- * pipe, so pwsh -Command - blocks forever waiting for EOF.
+ * UTF-16LE Base64 -EncodedCommand (pwsh-native, no temp file). After the
+ * dialog closes, pwsh's exit is a timing race (it can linger on the
+ * WinForms message pump), so we resolve on the first complete output line
+ * and kill the process rather than waiting for a natural exit.
  */
 export async function runNativePicker(initialDir: string | undefined, signal?: AbortSignal): Promise<NativePickResult> {
-  let stdout: string
-  try {
-    const encoded = Buffer.from(buildPickerScript(initialDir), 'utf16le').toString('base64')
-    const result = await execFileAsync('pwsh', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], {
-      maxBuffer: 4 * 1024 * 1024,
+  const encoded = Buffer.from(buildPickerScript(initialDir), 'utf16le').toString('base64')
+  return await new Promise((resolve, reject) => {
+    const child = spawn('pwsh', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], {
       windowsHide: true,
-      encoding: 'utf8',
-      signal,
+      stdio: ['ignore', 'pipe', 'pipe'],
     })
-    stdout = result.stdout
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      throw new Error('PowerShell 7 (pwsh) not found on PATH; native file picker requires pwsh')
+    let out = ''
+    let settled = false
+    const finish = (result: NativePickResult): void => {
+      if (settled) return
+      settled = true
+      child.kill()
+      resolve(result)
     }
-    throw error
-  }
-  return parsePickerOutput(stdout)
+    child.stdout.setEncoding('utf8')
+    child.stdout.on('data', (data: string) => {
+      out += data
+      const trimmed = out.trim()
+      if (trimmed === 'CANCELED') {
+        finish({ paths: [], canceled: true })
+        return
+      }
+      if (trimmed.startsWith('[') || trimmed.startsWith('"')) {
+        try {
+          finish({ paths: JSON.parse(trimmed) as string[], canceled: false })
+        } catch {
+          // Output line not complete yet; keep buffering.
+        }
+      }
+    })
+    child.on('error', (error) => {
+      if (settled) return
+      settled = true
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        reject(new Error('PowerShell 7 (pwsh) not found on PATH; native file picker requires pwsh'))
+        return
+      }
+      reject(error)
+    })
+    if (signal !== undefined) {
+      signal.addEventListener('abort', () => {
+        if (settled) return
+        settled = true
+        child.kill()
+        reject(signal.reason)
+      }, { once: true })
+    }
+    child.on('exit', () => {
+      if (settled) return
+      settled = true
+      resolve(parsePickerOutput(out))
+    })
+  })
 }
