@@ -2,12 +2,12 @@ import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { isLoopbackRequest, readJsonBody } from './http.js'
-import { buildInjectSource, buildInjectText } from './inject.js'
+import { buildInjectSource, buildInjectText, type AttachedFile } from './inject.js'
 import { runNativePicker } from './native-pick.js'
 
 export const name = '@jackeywilder/dsh-file-picker'
 
-export const inject = ['webServer', 'systemPrompt', 'agents']
+export const inject = ['webServer', 'systemPrompt']
 
 /**
  * Model-facing hint: `@path:` draft refs tell the agent to read the file.
@@ -24,9 +24,20 @@ type SystemPromptFace = {
   section(section: { name: string; order: number; text: string }): () => void
 }
 
-/** Minimal structural face for the host `agents` service (dsh-agent registry). */
-type AgentsFace = {
-  get(id: string): { inject(message: unknown): void } | undefined
+/**
+ * Minimal structural face for the agent events we listen to. The plugin does
+ * not depend on @deepseek-ai/dsh-agent (a host-core package), so the cordis
+ * Events merge for `agent/inbox/inserted` is invisible here — this structural
+ * cast covers the compile-time gap; at runtime the event dispatches normally
+ * (the acp package proves root listeners receive agent-scoped events).
+ */
+type AgentEventsFace = {
+  on(event: 'agent/inbox/inserted', listener: (payload: AgentInboxInsertedPayload) => void): unknown
+}
+
+interface AgentInboxInsertedPayload {
+  agent: { sessionId: string; inject(message: unknown): void }
+  message: { source: { kind: string } }
 }
 
 function writeJson(res: ServerResponse, status: number, body: unknown): void {
@@ -38,12 +49,43 @@ function writeJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(payload)
 }
 
+/** Parse `files` from a request body into attached-file entries (bare path strings or { path } objects). */
+function parseFiles(body: Record<string, unknown> | undefined): AttachedFile[] {
+  if (body === undefined) return []
+  const entries = Array.isArray(body.files) ? body.files : []
+  return entries.filter((entry): entry is AttachedFile =>
+    typeof entry === 'string'
+    || (typeof entry === 'object' && entry !== null && typeof (entry as { path?: unknown }).path === 'string'))
+    .map((entry) => (typeof entry === 'string' ? { path: entry } : entry))
+}
+
 export function apply(ctx: Context): void {
   ctx.effect(() => (ctx as unknown as { systemPrompt: SystemPromptFace }).systemPrompt.section({
     name: 'dsh-file-picker',
     order: 200,
     text: PATH_HINT,
   }), 'dsh-file-picker: system prompt')
+
+  // Files staged by the browser rail. Keyed by session id; consumed (and
+  // cleared) when the next real user message enters that session's inbox —
+  // which is the reliable "the user pressed send" signal, independent of how
+  // the send was made (typed prompt, slash command, steer, image-only).
+  const stagedFiles = new Map<string, AttachedFile[]>()
+
+  // The one injection path: a user message (source.kind 'user') entering the
+  // live inbox means the send was accepted. `agent.inject` queues the staged
+  // paths as model-facing context for the next pre-step of that same turn, so
+  // the context message always rides the message that just went out.
+  ;(ctx as unknown as AgentEventsFace).on('agent/inbox/inserted', ({ agent, message }) => {
+    if (message.source.kind !== 'user') return
+    const pending = stagedFiles.get(agent.sessionId)
+    if (pending === undefined || pending.length === 0) return
+    stagedFiles.delete(agent.sessionId)
+    agent.inject(createUserMessage({
+      source: buildInjectSource(),
+      content: [{ type: 'text', text: buildInjectText(pending) }],
+    }))
+  })
 
   ctx.effect(() => ctx.webServer.register({
     kind: 'exact',
@@ -71,9 +113,12 @@ export function apply(ctx: Context): void {
     },
   }), 'dsh-file-picker: routes')
 
+  // Stage (or replace) the session's pending attachment list. The rail pushes
+  // its current cards here on every change, so the host always mirrors exactly
+  // what the user sees — removals included.
   ctx.effect(() => ctx.webServer.register({
     kind: 'exact',
-    path: '/api/dsh-file-picker/inject',
+    path: '/api/dsh-file-picker/stage',
     handler: async (req: IncomingMessage, res: ServerResponse) => {
       if (!isLoopbackRequest(req)) {
         writeJson(res, 403, { error: 'forbidden: loopback-only' })
@@ -84,39 +129,42 @@ export function apply(ctx: Context): void {
         return
       }
       const body = await readJsonBody(req)
-      if (body === undefined) {
-        writeJson(res, 400, { error: 'invalid JSON body' })
-        return
-      }
-      const sessionId = typeof body.sessionId === 'string' ? body.sessionId : ''
+      const sessionId = typeof body?.sessionId === 'string' ? body.sessionId : ''
       if (sessionId === '') {
         writeJson(res, 400, { error: 'missing sessionId' })
         return
       }
-      // Accept either bare absolute paths (strings) or { path, name?, size? } entries.
-      const files = Array.isArray(body.files)
-        ? body.files.filter((entry): entry is string | { path: string } =>
-            typeof entry === 'string' || (typeof entry === 'object' && entry !== null && typeof entry.path === 'string'))
-        : []
+      const files = parseFiles(body)
       if (files.length === 0) {
-        writeJson(res, 400, { error: 'no files' })
+        stagedFiles.delete(sessionId)
+      } else {
+        stagedFiles.set(sessionId, files)
+      }
+      writeJson(res, 200, { ok: true })
+    },
+  }), 'dsh-file-picker: stage route')
+
+  // Explicitly drop a session's staged list (rail cleared without a send).
+  ctx.effect(() => ctx.webServer.register({
+    kind: 'exact',
+    path: '/api/dsh-file-picker/unstage',
+    handler: async (req: IncomingMessage, res: ServerResponse) => {
+      if (!isLoopbackRequest(req)) {
+        writeJson(res, 403, { error: 'forbidden: loopback-only' })
         return
       }
-      try {
-        const agents = (ctx as { get(name: string): unknown }).get('agents') as AgentsFace | undefined
-        const agent = agents?.get(sessionId)
-        if (!agent) {
-          writeJson(res, 500, { error: `agent not found for session: ${sessionId}` })
-          return
-        }
-        agent.inject(createUserMessage({
-          source: buildInjectSource(),
-          content: [{ type: 'text', text: buildInjectText(files) }],
-        }))
-        writeJson(res, 200, { ok: true })
-      } catch (error) {
-        writeJson(res, 500, { error: error instanceof Error ? error.message : String(error) })
+      if (req.method !== 'POST') {
+        writeJson(res, 405, { error: `method not allowed: ${req.method ?? 'GET'}` })
+        return
       }
+      const body = await readJsonBody(req)
+      const sessionId = typeof body?.sessionId === 'string' ? body.sessionId : ''
+      if (sessionId === '') {
+        writeJson(res, 400, { error: 'missing sessionId' })
+        return
+      }
+      stagedFiles.delete(sessionId)
+      writeJson(res, 200, { ok: true })
     },
-  }), 'dsh-file-picker: inject route')
+  }), 'dsh-file-picker: unstage route')
 }

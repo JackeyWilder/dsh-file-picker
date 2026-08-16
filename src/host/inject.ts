@@ -6,9 +6,13 @@ export interface AttachedFile {
   size?: number
 }
 
-/** Durable source for the injected context message: plugin origin, notice form. */
-export function buildInjectSource(): { kind: 'plugin'; plugin: string; form: 'notice' } {
-  return { kind: 'plugin', plugin: 'dsh-file-picker', form: 'notice' }
+/**
+ * Durable source for the injected context message: plugin origin, notice form.
+ * `summary` is the collapsed-row account the notice renders without expanding
+ * (ui-conversation's noticeSummary reads it off the durable source).
+ */
+export function buildInjectSource(): { kind: 'plugin'; plugin: string; form: 'notice'; summary: string } {
+  return { kind: 'plugin', plugin: 'dsh-file-picker', form: 'notice', summary: '附加了文件，请按需读取' }
 }
 
 /** Human-readable file list for the injected context text. */

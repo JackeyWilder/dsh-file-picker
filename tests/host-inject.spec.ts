@@ -19,8 +19,13 @@ describe('buildInjectText', () => {
 })
 
 describe('buildInjectSource', () => {
-  it('carries plugin kind and notice form', () => {
+  it('carries plugin kind, notice form, and a collapsed-row summary', () => {
     const source = buildInjectSource()
-    expect(source).toEqual({ kind: 'plugin', plugin: 'dsh-file-picker', form: 'notice' })
+    expect(source).toEqual({
+      kind: 'plugin',
+      plugin: 'dsh-file-picker',
+      form: 'notice',
+      summary: '附加了文件，请按需读取',
+    })
   })
 })

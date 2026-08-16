@@ -1,5 +1,5 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react'
-import { injectFiles } from './api.js'
+import { stageFiles, unstageFiles } from './api.js'
 import { clear, getSnapshot, removeFile, subscribe, type RailFile } from './rail.js'
 
 // ── inline styling (cards only; sending rides the main composer submit) ──
@@ -52,33 +52,47 @@ function metaOf(file: RailFile): string {
 export interface AttachmentRailProps {
   /** Framework-provided session id (session-scope dock slot). */
   sessionId?: string
-  /** Selector hook over the live input state (draft text and submit phase). */
-  useInput?: { (selector: (s: { draft: string; phase: string }) => string): string }
+  /** Selector hook over the live conversation snapshot (framework standard kit). */
+  useSession?: { (selector: (s: { nodes: readonly unknown[] }) => number): number }
 }
 
 /**
  * Attachment cards above the composer (`conversation.input.dock`). The staged
- * paths ride the NEXT main-composer submit: when the input machine enters the
- * `submitting` phase, the files are pushed into the session as an injected
- * plugin context message and the rail clears itself.
+ * paths ride the NEXT user message: the rail mirrors its cards onto the host
+ * (`/stage`), and the host injects them into the session when the message
+ * enters the inbox. The rail clears itself once that message lands — observed
+ * as a conversation-node count increase, which is the same signal on every
+ * send path (typed prompt, slash command, steer, image-only).
  */
-export function AttachmentRail({ sessionId, useInput }: AttachmentRailProps) {
+export function AttachmentRail({ sessionId, useSession }: AttachmentRailProps) {
   const files = useSyncExternalStore(subscribe, getSnapshot)
-  const phase = useInput ? useInput((s) => s.phase) : ''
-  const injectedFor = useRef<string | null>(null)
+  const messageCount = useSession ? useSession((s) => s.nodes.length) : 0
+  const lastSeenCount = useRef(0)
 
+  // Mirror the rail onto the host: replace the staged list with exactly the
+  // current cards, or drop it entirely when the rail is empty (a removal or
+  // a no-send clear must not leave stale paths staged).
   useEffect(() => {
-    if (files.length === 0 || sessionId === undefined || phase !== 'submitting') return
-    // One injection per submit burst: remember the phase identity we acted on.
-    if (injectedFor.current === phase) return
-    injectedFor.current = phase
-    const paths = files.map((f) => f.path)
-    void injectFiles(sessionId, paths)
-      .then(() => clear())
-      .catch((cause) => {
-        console.error('[dsh-file-picker] context injection failed:', cause)
+    if (sessionId === undefined) return
+    if (files.length === 0) {
+      void unstageFiles(sessionId).catch((cause) => {
+        console.error('[dsh-file-picker] unstage failed:', cause)
       })
-  }, [files, sessionId, phase])
+      return
+    }
+    void stageFiles(sessionId, files.map((f) => f.path)).catch((cause) => {
+      console.error('[dsh-file-picker] stage failed:', cause)
+    })
+  }, [sessionId, files])
+
+  // Clear the cards once the user's send produced a new conversation node —
+  // the host has injected the staged paths by then, so the cards have served
+  // their purpose and must not ride a second message.
+  useEffect(() => {
+    if (messageCount <= lastSeenCount.current) return
+    lastSeenCount.current = messageCount
+    if (files.length > 0) clear()
+  }, [files, messageCount])
 
   if (files.length === 0) return null
 

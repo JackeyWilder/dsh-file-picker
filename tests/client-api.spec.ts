@@ -1,6 +1,6 @@
 // tests/client-api.spec.ts
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { nativePick, injectFiles } from '../src/client/api.js'
+import { nativePick, stageFiles, unstageFiles } from '../src/client/api.js'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -28,15 +28,15 @@ describe('nativePick', () => {
   })
 })
 
-describe('injectFiles', () => {
+describe('stageFiles', () => {
   it('POSTs the session id and path entries', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ ok: true }),
     })
     vi.stubGlobal('fetch', fetchMock)
-    await injectFiles('session-1', ['C:\\dev\\a.txt', 'C:\\dev\\b.txt'])
-    expect(fetchMock).toHaveBeenCalledWith('/api/dsh-file-picker/inject', expect.objectContaining({
+    await stageFiles('session-1', ['C:\\dev\\a.txt', 'C:\\dev\\b.txt'])
+    expect(fetchMock).toHaveBeenCalledWith('/api/dsh-file-picker/stage', expect.objectContaining({
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -48,8 +48,31 @@ describe('injectFiles', () => {
   it('throws a readable error on non-ok response', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: false,
-      json: async () => ({ error: 'agent not found for session: session-1' }),
+      json: async () => ({ error: 'forbidden: loopback-only' }),
     }))
-    await expect(injectFiles('session-1', ['C:\\dev\\a.txt'])).rejects.toThrow(/agent not found/)
+    await expect(stageFiles('session-1', ['C:\\dev\\a.txt'])).rejects.toThrow(/forbidden/)
+  })
+})
+
+describe('unstageFiles', () => {
+  it('POSTs the session id', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ ok: true }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    await unstageFiles('session-1')
+    expect(fetchMock).toHaveBeenCalledWith('/api/dsh-file-picker/unstage', expect.objectContaining({
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId: 'session-1' }),
+    }))
+  })
+  it('throws a readable error on non-ok response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      json: async () => ({ error: 'forbidden: loopback-only' }),
+    }))
+    await expect(unstageFiles('session-1')).rejects.toThrow(/forbidden/)
   })
 })

@@ -21,19 +21,33 @@ export async function nativePick(initialDir: string | undefined): Promise<Native
 }
 
 /**
- * Push staged files into the session as an injected plugin context message
- * (send-time injection, host route `/api/dsh-file-picker/inject`). Throws a
- * readable error on a non-ok response, mirroring `nativePick`.
+ * Stage (replace) the rail's current cards on the host for one session. The
+ * host injects the staged paths when that session's next real user message
+ * enters the inbox — send-time injection without the browser racing the input
+ * machine's phase transitions. Throws a readable error on a non-ok response.
  */
-export async function injectFiles(sessionId: string, paths: readonly string[] | string): Promise<void> {
+export async function stageFiles(sessionId: string, paths: readonly string[] | string): Promise<void> {
   const list = Array.isArray(paths) ? paths : [paths]
-  const response = await fetch('/api/dsh-file-picker/inject', {
+  const response = await fetch('/api/dsh-file-picker/stage', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ sessionId, files: list.map((path) => ({ path })) }),
   })
   const body = (await response.json()) as { error?: string }
   if (!response.ok) {
-    throw new Error(body.error ?? `inject failed: HTTP ${response.status}`)
+    throw new Error(body.error ?? `stage failed: HTTP ${response.status}`)
+  }
+}
+
+/** Drop a session's staged list on the host (rail cleared without a send). */
+export async function unstageFiles(sessionId: string): Promise<void> {
+  const response = await fetch('/api/dsh-file-picker/unstage', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sessionId }),
+  })
+  const body = (await response.json()) as { error?: string }
+  if (!response.ok) {
+    throw new Error(body.error ?? `unstage failed: HTTP ${response.status}`)
   }
 }
