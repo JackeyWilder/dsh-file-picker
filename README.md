@@ -36,6 +36,19 @@ pnpm install && pnpm build
 npx vitest run
 ```
 
+## 同类插件对比
+
+| 插件 | 机制 | 与本案差异 |
+|---|---|---|
+| [lostpaidaxing/dsh-file-picker](https://github.com/lostpaidaxing/dsh-file-picker) | 原生对话框选任意文件 → 附件卡片 → 发送时注入路径 | 走 `Agent.inject` + `$DSH_HOME/uploads/attach-<sessionId>.txt` **sidecar 文件**中转；本插件路径由浏览器直接 POST 到宿主暂存（无 sidecar 残留） |
+| [omdsh-dev/dsh-at-file](https://github.com/omdsh-dev/dsh-at-file) | 输入框 `@` 搜索**工作区内**文件，`<workspace-reference>` 引用进消息 | 只支持工作区内文件；本插件支持工作区外任意磁盘文件（Windows 原生对话框） |
+| [omdsh-dev/dsh-drag-and-drop](https://github.com/omdsh-dev/dsh-drag-and-drop) | 拖拽文件 → 路径定位引擎还原真实路径插入输入框 | 路径进草稿文本；本插件路径不进草稿、不进消息文本，以宿主注入的上下文消息送达 |
+
+## 致谢
+
+- [lostpaidaxing/dsh-file-picker](https://github.com/lostpaidaxing/dsh-file-picker)：附件卡片条交互模型（图标 + 文件名 + × 移除）。
+- [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) 的 `dsh-ssh`：loopback 信任栅栏（`isLoopbackRequest`）实现范式。
+
 ## 安全
 
 宿主侧路由仅接受 loopback 请求（`isLoopbackRequest` 校验 remoteAddress/Host/sec-fetch-site/Origin）；只提供只读原生文件选择能力，不读文件内容、不写文件。选择过程不留 sidecar 残留：pwsh 以 `-EncodedCommand` 内联执行对话框脚本，不落临时脚本文件，对话框关闭后进程即被终止。
