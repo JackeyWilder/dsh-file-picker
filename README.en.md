@@ -132,4 +132,4 @@ npx vitest run
 
 ## License
 
-MIT © 2026 JackeyWilder
+[MIT](https://opensource.org/licenses/MIT) © 2026 JackeyWilder
