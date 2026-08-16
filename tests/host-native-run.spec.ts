@@ -1,10 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { EventEmitter } from 'node:events'
 
 const { spawnMock } = vi.hoisted(() => ({ spawnMock: vi.fn() }))
 vi.mock('node:child_process', () => ({ spawn: spawnMock }))
 
-import { runNativePicker } from '../src/host/native-pick.js'
+import { runNativePicker, PICKER_STUCK_TIMEOUT_MS } from '../src/host/native-pick.js'
 
 function fakeChild() {
   const child = new EventEmitter() as unknown as {
@@ -18,7 +18,12 @@ function fakeChild() {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers()
   spawnMock.mockReset()
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 describe('runNativePicker', () => {
@@ -36,6 +41,7 @@ describe('runNativePicker', () => {
     spawnMock.mockReturnValue(child)
     const promise = runNativePicker(undefined)
     child.stdout.emit('data', '["C:\\\\a.txt","C:\\\\b.txt"]')
+    await vi.advanceTimersByTimeAsync(1)
     await expect(promise).resolves.toEqual({ paths: ['C:\\a.txt', 'C:\\b.txt'], canceled: false })
     expect(child.kill).toHaveBeenCalled()
   })
@@ -46,7 +52,17 @@ describe('runNativePicker', () => {
     const promise = runNativePicker(undefined)
     child.stdout.emit('data', '["C:\\\\')
     child.stdout.emit('data', 'a.txt"]')
+    await vi.advanceTimersByTimeAsync(1)
     await expect(promise).resolves.toEqual({ paths: ['C:\\a.txt'], canceled: false })
+    expect(child.kill).toHaveBeenCalled()
+  })
+
+  it('resolves as canceled and reaps pwsh when the dialog never produces output', async () => {
+    const child = fakeChild()
+    spawnMock.mockReturnValue(child)
+    const promise = runNativePicker(undefined)
+    await vi.advanceTimersByTimeAsync(PICKER_STUCK_TIMEOUT_MS + 1)
+    await expect(promise).resolves.toEqual({ paths: [], canceled: true })
     expect(child.kill).toHaveBeenCalled()
   })
 

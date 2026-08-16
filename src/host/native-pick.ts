@@ -30,14 +30,32 @@ export function buildPickerScript(initialDir: string | undefined): string {
     "$d.Title = '选择文件'",
     "$d.Filter = '所有文件 (*.*)|*.*'",
     '$d.RestoreDirectory = $true',
+    // The dsh service spawns pwsh as a background child without foreground
+    // activation rights, so Windows foreground-lock can open the modal dialog
+    // *behind* the active window — visible on screen but never interactable,
+    // leaving ShowDialog blocked forever. A tiny transparent TopMost owner
+    // form forces the dialog to the top of the z-order.
+    '$owner = New-Object System.Windows.Forms.Form',
+    '$owner.TopMost = $true',
+    '$owner.ShowInTaskbar = $false',
+    '$owner.Opacity = 0',
+    '$owner.Size = New-Object System.Drawing.Size(1, 1)',
+    '$owner.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual',
+    '$owner.Location = New-Object System.Drawing.Point(-32000, -32000)',
+    '$owner.Show()',
   ]
   if (initialDir !== undefined) {
     const quoted = `'${esc(initialDir)}'`
     lines.push(`if (Test-Path -LiteralPath ${quoted}) { $d.InitialDirectory = ${quoted} }`)
   }
   lines.push(
-    '$r = $d.ShowDialog()',
-    "if ($r -eq [System.Windows.Forms.DialogResult]::OK) { @($d.FileNames) | ConvertTo-Json -Compress } else { 'CANCELED' }",
+    '$r = $d.ShowDialog($owner)',
+    'try {',
+    "  if ($r -eq [System.Windows.Forms.DialogResult]::OK) { @($d.FileNames) | ConvertTo-Json -Compress } else { 'CANCELED' }",
+    '} finally {',
+    '  $owner.Dispose()',
+    '  $d.Dispose()',
+    '}',
   )
   return lines.join('\n')
 }
@@ -66,7 +84,13 @@ export function parsePickerOutput(out: string): NativePickResult {
  * dialog closes, pwsh's exit is a timing race (it can linger on the
  * WinForms message pump), so we resolve on the first complete output line
  * and kill the process rather than waiting for a natural exit.
+ *
+ * If the dialog never produces output (blocked or hidden behind another
+ * window), a guard timeout resolves as canceled and reaps pwsh, so the
+ * caller's UI never wedges on a permanently pending pick.
  */
+export const PICKER_STUCK_TIMEOUT_MS = 10 * 60 * 1000
+
 export async function runNativePicker(initialDir: string | undefined, signal?: AbortSignal): Promise<NativePickResult> {
   const encoded = Buffer.from(buildPickerScript(initialDir), 'utf16le').toString('base64')
   return await new Promise((resolve, reject) => {
@@ -79,9 +103,17 @@ export async function runNativePicker(initialDir: string | undefined, signal?: A
     const finish = (result: NativePickResult): void => {
       if (settled) return
       settled = true
+      clearTimeout(stuck)
       child.kill()
       resolve(result)
     }
+    const stuck = setTimeout(() => {
+      if (settled) return
+      settled = true
+      child.kill()
+      resolve({ paths: [], canceled: true })
+    }, PICKER_STUCK_TIMEOUT_MS)
+    stuck.unref?.()
     child.stdout.setEncoding('utf8')
     child.stdout.on('data', (data: string) => {
       out += data

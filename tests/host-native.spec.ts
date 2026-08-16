@@ -12,6 +12,15 @@ describe('buildPickerScript', () => {
     expect(script).toContain("$d.Filter = '所有文件 (*.*)|*.*'")
     expect(script).toContain('CANCELED')
   })
+  it('shows the dialog on a transparent TopMost owner so foreground-lock cannot bury it', () => {
+    const script = buildPickerScript(undefined)
+    expect(script).toContain('$owner.TopMost = $true')
+    expect(script).toContain('$owner.ShowInTaskbar = $false')
+    expect(script).toContain('$owner.Opacity = 0')
+    expect(script).toContain('$d.ShowDialog($owner)')
+    expect(script).toContain('$owner.Dispose()')
+    expect(script).toContain('$d.Dispose()')
+  })
   it('wraps FileNames in @() so a single-file pick emits a JSON array', () => {
     expect(buildPickerScript(undefined)).toContain('@($d.FileNames)')
   })
