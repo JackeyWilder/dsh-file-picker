@@ -1,7 +1,7 @@
 {
   "name": "@jackeywilder/dsh-file-picker",
   "version": "0.1.0",
-  "description": "dsh web plugin: native Windows file picker that injects @path: refs into the draft",
+  "description": "dsh web plugin: native Windows file picker with attachment rail that injects file paths into the session context at send time",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

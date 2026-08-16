@@ -11,9 +11,10 @@ dsh plugin --profile web add link:"<本包路径>"
 ## 使用
 
 1. 点击输入框工具行的 📎 按钮；
-2. 系统文件对话框弹出，浏览并多选文件（对话框记住上次所选目录）；
+2. Windows 原生文件对话框弹出，浏览并多选文件（对话框记住上次所选目录）；
 3. 点"打开"——输入框上方出现附件卡片条（📄/📁 图标 + 文件名 + 所在目录 + × 移除）；
-4. 在输入框写入消息，点卡片条右侧的"发送"按钮——宿主先把所选文件的绝对路径清单注入当前会话上下文，随后发送消息；发送成功后卡片条清空。
+4. 在输入框写入消息，点卡片条右侧的"发送"按钮——宿主先把所选文件的绝对路径清单注入当前会话上下文，随后发送消息；发送成功后卡片条清空；
+5. 对话中出现 "Context injection" 上下文行（绝对路径清单），agent 按其中的路径用 read 工具读取文件内容。
 
 ## 开发
 
@@ -24,4 +25,4 @@ npx vitest run
 
 ## 安全
 
-宿主侧路由仅接受 loopback 请求（`isLoopbackRequest` 校验 remoteAddress/Host/sec-fetch-site/Origin）；只提供只读原生文件选择能力，不读文件内容、不写文件。
+宿主侧路由仅接受 loopback 请求（`isLoopbackRequest` 校验 remoteAddress/Host/sec-fetch-site/Origin）；只提供只读原生文件选择能力，不读文件内容、不写文件。选择过程不留 sidecar 残留：pwsh 以 `-EncodedCommand` 内联执行对话框脚本，不落临时脚本文件，对话框关闭后进程即被终止。
