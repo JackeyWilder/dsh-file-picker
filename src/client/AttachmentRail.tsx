@@ -1,6 +1,6 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react'
-import { stageFiles, unstageFiles } from './api.js'
-import { clear, getSnapshot, removeFile, subscribe, type RailFile } from './rail.js'
+import { revealPath, stageFiles, unstageFiles } from './api.js'
+import { clear, getSnapshot, moveCard, moveCardToTop, removeFile, subscribe, type RailFile } from './rail.js'
 
 // ── inline styling (cards only; sending rides the main composer submit) ──
 const CSS = [
@@ -8,10 +8,13 @@ const CSS = [
   '.dshfp-card{display:inline-flex;align-items:center;gap:8px;max-width:280px;background:var(--dsw-alias-bg-tertiary,rgba(127,127,127,.14));border:1px solid var(--dsw-alias-border,rgba(127,127,127,.28));border-radius:10px;padding:6px 6px 6px 10px}',
   '.dshfp-card-icon{font-size:18px;line-height:1;flex:none}',
   '.dshfp-card-body{display:flex;flex-direction:column;min-width:0;gap:1px}',
-  '.dshfp-card-name{font-size:13px;line-height:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:190px}',
-  '.dshfp-card-meta{font-size:11px;line-height:15px;color:var(--dsw-alias-fg-muted,rgba(160,160,160,.9));overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:190px}',
-  '.dshfp-card-x{border:none;background:transparent;color:inherit;cursor:pointer;font-size:16px;line-height:1;padding:3px 6px;border-radius:6px;opacity:.65;flex:none}',
-  '.dshfp-card-x:hover{background:var(--dsw-alias-bg-hover,rgba(127,127,127,.22));opacity:1}',
+  '.dshfp-card-name{font-size:13px;line-height:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px}',
+  '.dshfp-card-meta{font-size:11px;line-height:15px;color:var(--dsw-alias-fg-muted,rgba(160,160,160,.9));overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px}',
+  '.dshfp-card-ops{display:flex;align-items:center;gap:2px;flex:none}',
+  '.dshfp-card-ops button{border:none;background:transparent;color:inherit;cursor:pointer;font-size:13px;line-height:1;padding:3px 4px;border-radius:6px;opacity:.65;flex:none}',
+  '.dshfp-card-ops button:hover{background:var(--dsw-alias-bg-hover,rgba(127,127,127,.22));opacity:1}',
+  '.dshfp-clear{border:1px solid var(--dsw-alias-border,rgba(127,127,127,.28));background:transparent;color:var(--dsw-alias-fg-muted,rgba(160,160,160,.9));cursor:pointer;font-size:12px;line-height:1;padding:4px 8px;border-radius:6px;margin-left:4px}',
+  '.dshfp-clear:hover{background:var(--dsw-alias-bg-hover,rgba(127,127,127,.22));opacity:1}',
   '.dshfp-hint{font-size:12px;line-height:16px;color:var(--dsw-alias-fg-muted,rgba(160,160,160,.9))}',
 ].join('\n')
 const TAG_ID = 'dsh-file-picker/style-rail'
@@ -96,26 +99,82 @@ export function AttachmentRail({ sessionId, useSession }: AttachmentRailProps) {
 
   if (files.length === 0) return null
 
+  const copyPath = (path: string): void => {
+    void navigator.clipboard.writeText(path).catch((cause) => {
+      console.error('[dsh-file-picker] copy failed:', cause)
+    })
+  }
+
+  const clearAll = (): void => {
+    clear()
+  }
+
   return (
     <div className="dshfp-rail">
-      {files.map((file) => (
+      {files.map((file, idx) => (
         <div key={file.path} className="dshfp-card" title={file.path}>
           <span className="dshfp-card-icon" aria-hidden="true">{iconFor(file.path)}</span>
           <span className="dshfp-card-body">
             <span className="dshfp-card-name">{file.name}</span>
             <span className="dshfp-card-meta">{metaOf(file)}</span>
           </span>
-          <button
-            type="button"
-            className="dshfp-card-x"
-            aria-label={`移除 ${file.name}`}
-            onClick={() => removeFile(file.path)}
-          >
-            ×
-          </button>
+          <span className="dshfp-card-ops">
+            <button
+              type="button"
+              aria-label={`复制路径 ${file.name}`}
+              title="复制路径"
+              onClick={() => copyPath(file.path)}
+            >
+              📋
+            </button>
+            <button
+              type="button"
+              aria-label={`置顶 ${file.name}`}
+              title="置顶"
+              disabled={idx === 0}
+              onClick={() => moveCardToTop(file.path)}
+            >
+              ⬆️
+            </button>
+            <button
+              type="button"
+              aria-label={`上移 ${file.name}`}
+              title="上移"
+              disabled={idx === 0}
+              onClick={() => moveCard(file.path, -1)}
+            >
+              ↑
+            </button>
+            <button
+              type="button"
+              aria-label={`下移 ${file.name}`}
+              title="下移"
+              disabled={idx === files.length - 1}
+              onClick={() => moveCard(file.path, 1)}
+            >
+              ↓
+            </button>
+            <button
+              type="button"
+              aria-label={`在资源管理器中定位 ${file.name}`}
+              title="在资源管理器中定位"
+              onClick={() => void revealPath(file.path)}
+            >
+              📂
+            </button>
+            <button
+              type="button"
+              className="dshfp-card-x"
+              aria-label={`移除 ${file.name}`}
+              onClick={() => removeFile(file.path)}
+            >
+              ×
+            </button>
+          </span>
         </div>
       ))}
       <span className="dshfp-hint">随下一条消息发送</span>
+      <button type="button" className="dshfp-clear" onClick={clearAll}>清空</button>
     </div>
   )
 }

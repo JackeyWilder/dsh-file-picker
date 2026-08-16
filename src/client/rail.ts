@@ -82,3 +82,30 @@ export function clear(): void {
   cards = []
   emit()
 }
+
+/**
+ * Move one staged card one step up (-1) or down (+1). Out-of-range moves and
+ * unknown paths are silent no-ops. Order flows into the staged list, so the
+ * injected file list follows the card order.
+ */
+export function moveCard(path: string, dir: -1 | 1): readonly RailFile[] {
+  const idx = cards.findIndex((c) => c.path === path)
+  if (idx < 0) return cards
+  const target = idx + dir
+  if (target < 0 || target >= cards.length) return cards
+  const next = cards.slice()
+  ;[next[idx], next[target]] = [next[target], next[idx]]
+  cards = next
+  emit()
+  return cards
+}
+
+/** Move one staged card to the front of the rail. Unknown paths are a no-op. */
+export function moveCardToTop(path: string): readonly RailFile[] {
+  const idx = cards.findIndex((c) => c.path === path)
+  if (idx <= 0) return cards
+  const next = [cards[idx], ...cards.slice(0, idx), ...cards.slice(idx + 1)]
+  cards = next
+  emit()
+  return cards
+}

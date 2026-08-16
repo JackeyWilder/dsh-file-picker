@@ -51,3 +51,24 @@ export async function unstageFiles(sessionId: string): Promise<void> {
     throw new Error(body.error ?? `unstage failed: HTTP ${response.status}`)
   }
 }
+
+/**
+ * Ask the host to reveal a file in Windows Explorer (folder opened with the
+ * file selected). Loopback-only host route; failure is reported, never thrown
+ * to the caller's critical path.
+ */
+export async function revealPath(path: string): Promise<void> {
+  try {
+    const response = await fetch('/api/dsh-file-picker/reveal', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ path }),
+    })
+    const body = (await response.json()) as { error?: string }
+    if (!response.ok) {
+      console.error(`[dsh-file-picker] reveal failed: ${body.error ?? `HTTP ${response.status}`}`)
+    }
+  } catch (error) {
+    console.error('[dsh-file-picker] reveal failed:', error)
+  }
+}

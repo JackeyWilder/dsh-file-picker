@@ -5,6 +5,7 @@ import { isLoopbackRequest, readJsonBody } from './http.js'
 import { buildInjectSource, buildInjectText, type AttachedFile } from './inject.js'
 import { hostLog, PLUGIN_VERSION, redactList } from './log.js'
 import { runNativePicker } from './native-pick.js'
+import { revealPath } from './reveal.js'
 
 export const name = '@jackeywilder/dsh-file-picker'
 
@@ -157,6 +158,35 @@ export function apply(ctx: Context): void {
       writeJson(res, 200, { ok: true })
     },
   }), 'dsh-file-picker: stage route')
+
+  // Reveal a staged file in Windows Explorer (folder opened, file selected).
+  // Loopback fence only — the browser card's "reveal" button calls it.
+  ctx.effect(() => ctx.webServer.register({
+    kind: 'exact',
+    path: '/api/dsh-file-picker/reveal',
+    handler: async (req: IncomingMessage, res: ServerResponse) => {
+      if (!isLoopbackRequest(req)) {
+        writeJson(res, 403, { error: 'forbidden: loopback-only' })
+        return
+      }
+      if (req.method !== 'POST') {
+        writeJson(res, 405, { error: `method not allowed: ${req.method ?? 'GET'}` })
+        return
+      }
+      const body = await readJsonBody(req)
+      const path = typeof body?.path === 'string' && body.path !== '' ? body.path : ''
+      if (path === '') {
+        writeJson(res, 400, { error: 'missing path' })
+        return
+      }
+      try {
+        revealPath(path)
+        writeJson(res, 200, { ok: true })
+      } catch (error) {
+        writeJson(res, 500, { error: error instanceof Error ? error.message : String(error) })
+      }
+    },
+  }), 'dsh-file-picker: reveal route')
 
   // Explicitly drop a session's staged list (rail cleared without a send).
   ctx.effect(() => ctx.webServer.register({
