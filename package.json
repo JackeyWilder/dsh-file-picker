@@ -1,13 +1,20 @@
 {
-  "name": "dsh-file-picker",
+  "name": "@jackeywilder/dsh-file-picker",
   "version": "0.1.0",
-  "description": "dsh web file picker: browse any directory and inject @path: refs into the draft",
+  "description": "dsh web plugin: native Windows file picker that injects @path: refs into the draft",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
     "./client": "./lib/client.js",
     "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml"
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
   },
   "dsh": {
     "bundle": {

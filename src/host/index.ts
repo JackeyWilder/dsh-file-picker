@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { isLoopbackRequest, readJsonBody } from './http.js'
 import { runNativePicker } from './native-pick.js'
 
-export const name = 'dsh-file-picker'
+export const name = '@jackeywilder/dsh-file-picker'
 
 export const inject = ['webServer', 'systemPrompt']
 
