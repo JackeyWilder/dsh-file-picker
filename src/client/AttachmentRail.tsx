@@ -1,6 +1,6 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { revealPath, stageFiles, unstageFiles } from './api.js'
-import { clear, getSnapshot, moveCard, moveCardToTop, removeFile, subscribe, type RailFile } from './rail.js'
+import { clear, getSnapshot, removeFile, subscribe, type RailFile } from './rail.js'
 
 // ── inline styling (cards only; sending rides the main composer submit) ──
 const CSS = [
@@ -111,7 +111,7 @@ export function AttachmentRail({ sessionId, useSession }: AttachmentRailProps) {
 
   return (
     <div className="dshfp-rail">
-      {files.map((file, idx) => (
+      {files.map((file) => (
         <div key={file.path} className="dshfp-card" title={file.path}>
           <span className="dshfp-card-icon" aria-hidden="true">{iconFor(file.path)}</span>
           <span className="dshfp-card-body">
@@ -126,33 +126,6 @@ export function AttachmentRail({ sessionId, useSession }: AttachmentRailProps) {
               onClick={() => copyPath(file.path)}
             >
               📋
-            </button>
-            <button
-              type="button"
-              aria-label={`置顶 ${file.name}`}
-              title="置顶"
-              disabled={idx === 0}
-              onClick={() => moveCardToTop(file.path)}
-            >
-              ⬆️
-            </button>
-            <button
-              type="button"
-              aria-label={`上移 ${file.name}`}
-              title="上移"
-              disabled={idx === 0}
-              onClick={() => moveCard(file.path, -1)}
-            >
-              ↑
-            </button>
-            <button
-              type="button"
-              aria-label={`下移 ${file.name}`}
-              title="下移"
-              disabled={idx === files.length - 1}
-              onClick={() => moveCard(file.path, 1)}
-            >
-              ↓
             </button>
             <button
               type="button"

@@ -181,8 +181,10 @@ export function apply(ctx: Context): void {
       }
       try {
         revealPath(path)
+        hostLog(`reveal: ${redactList([path])}`)
         writeJson(res, 200, { ok: true })
       } catch (error) {
+        hostLog(`reveal: failed: ${error instanceof Error ? error.message : String(error)}`)
         writeJson(res, 500, { error: error instanceof Error ? error.message : String(error) })
       }
     },
