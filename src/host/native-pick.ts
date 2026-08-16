@@ -21,6 +21,11 @@ export function buildPickerScript(initialDir: string | undefined): string {
     // blocks without ever creating a visible window (pwsh WinForms quirk).
     '[System.Windows.Forms.Application]::EnableVisualStyles()',
     '$d = [System.Windows.Forms.OpenFileDialog]::new()',
+    // Force the modern Explorer-style dialog. The default is true, but under
+    // pwsh's non-interactive shell it can silently fall back to the legacy
+    // flat list; being explicit keeps the picker looking like the OS dialog
+    // (and like Electron apps' native pickers).
+    '$d.AutoUpgradeEnabled = $true',
     '$d.Multiselect = $true',
     "$d.Title = '选择文件'",
     "$d.Filter = '所有文件 (*.*)|*.*'",
