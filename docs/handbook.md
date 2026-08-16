@@ -6,7 +6,7 @@
 
 1. **对话框被压到前台窗口后面（最严重）**：dsh 服务 spawn 的 pwsh 无前台激活权限，Windows 前台锁把模态对话框开在其它窗口之后——可见但点不到 → `ShowDialog()` 永久阻塞 → `runNativePicker` promise 永不 resolve → 📎 永久 disabled，整个插件失效。
    修复：脚本内建透明 TopMost owner（`Opacity=0`、1x1、`Location=(-32000,-32000)`、`ShowInTaskbar=$false`）→ `ShowDialog($owner)`；另加 `PICKER_STUCK_TIMEOUT_MS = 10min` 超时兜底，超时 kill 子进程并按取消处理。
-2. **explorer 定位不生效**：`spawn('explorer', ['/select,<path>'])` 不经 shell，但 explorer.exe 自己按空格解析命令行——含空格路径在首个空格被截断。修复：参数双引号包裹 `/select,"<path>"`（含引号内转义）。
+2. **explorer 定位不生效（2026-08-17 实测定案）**：`spawn('explorer', ['/select,"<path>"'])` 虽不经 shell，但 Node 的 libuv 会把含空格 + 内部引号的 argv 拼成 `"/select,\"...\""`（内部引号转义为 `\"`），explorer.exe 不认 `\"` → 进程启动但**无窗口、空转残留**（多个此类进程可堆到 10+）。修复：`spawn('explorer', [arg], { shell: true })`——经 cmd.exe 原样传递引号段；路径中 `%` 加倍防 cmd 变量展开，`"` 双写兜底（NTFS 文件名本不允许 `"`）。已实测：同路径直传无窗口 vs shell 传参正常弹出资源管理器窗口。
 3. **`agent.sessionId` 是 undefined**：Agent 接口字段是 `id`。用 `agent.id` 做 session key。
 4. **pwsh 7 不能 cast `__ComObject` 到自定义 `[ComImport]` 接口**：COM 逻辑必须放进 `Add-Type` 的 C# static method（如 `FpPicker.Show()`）。
 5. **IFileDialog vtable 计数错误导致 AccessViolationException**：IFileDialog 有 23 个方法（无 `GetFileTypeCount`），多写一个 slot 全偏移。
@@ -39,6 +39,7 @@
 - 宿主存活：`curl http://127.0.0.1:3080/api/dsh-file-picker/status`
 - 插件日志：`~/.dsh/logs/dsh-file-picker.log`；dsh 主 shell 日志：`~/.dsh/dsh-launcher/shell.log`
 - 清理残留 pwsh：`Get-Process pwsh | Stop-Process`
+- 清理残留 explorer（无窗口空转）：`Get-Process explorer | Where-Object { $_.MainWindowHandle -eq 0 } | Stop-Process`（勿杀桌面 shell）
 - 浏览器 UI 未更新：Ctrl+Shift+R 强制刷新
 - `git push` 瞬时失败：重试一次
 - npm CDN 传播延迟：scoped 包首发 4-5 分钟属正常，勿当失败重发
