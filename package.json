@@ -1,6 +1,6 @@
 {
   "name": "@jackeywilder/dsh-file-picker",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "dsh web plugin: native Windows file picker with attachment rail that injects file paths into the session context at send time",
   "type": "module",
   "main": "lib/index.js",
