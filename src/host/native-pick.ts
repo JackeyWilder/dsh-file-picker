@@ -6,39 +6,158 @@ export interface NativePickResult {
 }
 
 /**
- * Build the pwsh script that shows the native multi-select file dialog.
- * Picked absolute paths are emitted as a JSON array; cancel/close emits
- * CANCELED. Single quotes in the initial dir are doubled for PS escaping.
+ * C# interop + dialog driver compiled into the pwsh process. The WinForms
+ * OpenFileDialog can silently render in legacy style under pwsh's shell, so
+ * we drive the COM IFileOpenDialog (Vista+) — the same modern Explorer-style
+ * dialog Electron apps (e.g. ZCode) show — in pure file mode with
+ * FOS_ALLOWMULTISELECT | FOS_FORCEFILESYSTEM.
+ *
+ * The WHOLE dialog flow lives in C#: PowerShell 7 cannot cast a raw
+ * __ComObject onto a custom [ComImport] interface (cast fails at runtime),
+ * so PowerShell only calls the static Show() and receives a JSON string.
+ *
+ * GUIDs verified against the real COM object via QueryInterface probes:
+ * - IFileOpenDialog   D57C7288-D4AD-4768-BE02-9D969532D960 (QI OK)
+ * - IShellItem        43826d1e-e718-42ee-bc55-a1e261c37bfe (QI OK)
+ * - CLSID_FileOpenDialog DC1C5A9C-E88A-4dde-A5A1-60F82A20AEF7
+ *
+ * vtable order is a hard constraint: IFileDialog has 23 methods (there is
+ * NO GetFileTypeCount — adding one shifts every later slot and crashes with
+ * AccessViolationException). Show -> SetFileTypes -> SetFileTypeIndex ->
+ * GetFileTypeIndex -> Advise -> Unadvise -> SetOptions -> GetOptions -> ...
+ * -> SetFilter -> GetResults -> GetSelectedItems.
+ */
+const COM_INTEROP = String.raw`
+using System;
+using System.Runtime.InteropServices;
+
+public static class FpPicker {
+  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+  public struct COMDLG_FILTERSPEC { public string pszName; public string pszSpec; }
+
+  [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = true)]
+  public static extern int SHCreateItemFromParsingName(
+    string pszPath, IntPtr pbc, ref Guid riid, out IntPtr ppv);
+
+  [DllImport("ole32.dll")]
+  public static extern void CoTaskMemFree(IntPtr pv);
+
+  [ComImport, Guid("43826d1e-e718-42ee-bc55-a1e261c37bfe"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  public interface IShellItem {
+    void BindToHandler(IntPtr pbc, ref Guid bhid, ref Guid riid, out IntPtr ppv);
+    void GetParent(out IntPtr ppsi);
+    [PreserveSig] int GetDisplayName(uint sigdnName, out IntPtr ppszName);
+    void GetAttributes(uint sfgaoMask, out uint psfgaoAttribs);
+    void Compare(IntPtr psi, uint hint, out int piOrder);
+  }
+
+  [ComImport, Guid("b63ea76d-1f85-456f-a19c-48159efa858b"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  public interface IShellItemArray {
+    void BindToHandler(IntPtr pbc, ref Guid bhid, ref Guid riid, out IntPtr ppv);
+    void GetPropertyStore(uint flags, ref Guid riid, out IntPtr ppv);
+    void GetPropertyDescriptionList(ref Guid keyType, ref Guid riid, out IntPtr ppv);
+    void GetAttributes(uint attribFlags, uint sfgaoMask, out uint psfgaoAttribs);
+    void GetCount(out uint pdwNumItems);
+    void GetItemAt(uint dwIndex, out IntPtr ppsi);
+    void EnumItems(out IntPtr ppenumShellItems);
+  }
+
+  [ComImport, Guid("d57c7288-d4ad-4768-be02-9d969532d960"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  public interface IFileOpenDialog {
+    [PreserveSig] int Show(IntPtr hwnd);
+    void SetFileTypes(uint cFileTypes, [In, MarshalAs(UnmanagedType.LPArray)] COMDLG_FILTERSPEC[] rgFilterSpec);
+    void SetFileTypeIndex(uint iFileType);
+    void GetFileTypeIndex(out uint piFileType);
+    void Advise(IntPtr pfde, out uint pdwCookie);
+    void Unadvise(uint dwCookie);
+    void SetOptions(uint fos);
+    void GetOptions(out uint pfos);
+    void SetDefaultFolder(IShellItem psi);
+    void SetFolder(IShellItem psi);
+    void GetFolder(out IntPtr ppsi);
+    void GetCurrentSelection(out IntPtr ppsi);
+    void SetFileName([MarshalAs(UnmanagedType.LPWStr)] string pszName);
+    void GetFileName([MarshalAs(UnmanagedType.LPWStr)] out string pszName);
+    void SetTitle([MarshalAs(UnmanagedType.LPWStr)] string pszTitle);
+    void SetOkButtonLabel([MarshalAs(UnmanagedType.LPWStr)] string pszText);
+    void SetFileNameLabel([MarshalAs(UnmanagedType.LPWStr)] string pszLabel);
+    void GetResult(out IntPtr ppsi);
+    void AddPlace(IShellItem psi, int fdap);
+    void SetDefaultExtension([MarshalAs(UnmanagedType.LPWStr)] string pszDefaultExtension);
+    void Close(int hr);
+    void SetClientGuid(ref Guid guid);
+    void ClearClientData();
+    void SetFilter(IntPtr pFilter);
+    void GetResults(out IntPtr ppsai);
+    void GetSelectedItems(out IntPtr ppsai);
+  }
+
+  private static string JsonEscape(string s) {
+    return s.Replace("\\", "\\\\").Replace("\"", "\\\"");
+  }
+
+  /// Show the multi-select file dialog and return a JSON string:
+  /// ["C:\\a.txt", "C:\\b.txt"] or CANCELED.
+  public static string Show(string initialDir) {
+    var dialog = (IFileOpenDialog)Activator.CreateInstance(
+      Type.GetTypeFromCLSID(new Guid("DC1C5A9C-E88A-4dde-A5A1-60F82A20AEF7")));
+    uint opts;
+    dialog.GetOptions(out opts);
+    // FOS_ALLOWMULTISELECT | FOS_FORCEFILESYSTEM (no FOS_PICKFOLDERS: file mode)
+    dialog.SetOptions(opts | 0x200 | 0x40);
+    dialog.SetTitle("选择文件");
+    if (!string.IsNullOrEmpty(initialDir)) {
+      IntPtr psi;
+      var shellItemIid = new Guid("43826d1e-e718-42ee-bc55-a1e261c37bfe");
+      if (SHCreateItemFromParsingName(initialDir, IntPtr.Zero, ref shellItemIid, out psi) == 0) {
+        var item = (IShellItem)Marshal.GetObjectForIUnknown(psi);
+        dialog.SetFolder(item);
+      }
+    }
+    int hr = dialog.Show(IntPtr.Zero);
+    if (hr != 0) return "CANCELED";
+    IntPtr arrPtr;
+    dialog.GetResults(out arrPtr);
+    var array = (IShellItemArray)Marshal.GetObjectForIUnknown(arrPtr);
+    uint count;
+    array.GetCount(out count);
+    var parts = new System.Collections.Generic.List<string>();
+    for (uint i = 0; i < count; i++) {
+      IntPtr itemPtr;
+      array.GetItemAt(i, out itemPtr);
+      var item = (IShellItem)Marshal.GetObjectForIUnknown(itemPtr);
+      IntPtr namePtr;
+      item.GetDisplayName(0x80058000, out namePtr); // SIGDN_FILESYSPATH
+      string path = Marshal.PtrToStringUni(namePtr) ?? "";
+      CoTaskMemFree(namePtr);
+      parts.Add("\"" + JsonEscape(path) + "\"");
+    }
+    return "[" + string.Join(",", parts) + "]";
+  }
+}
+`
+
+/**
+ * Build the pwsh script that shows the native multi-select file dialog. The
+ * dialog itself runs inside the Add-Type'd C# FpPicker.Show(); PowerShell
+ * only guards the initial dir (Test-Path + single-quote escaping) and prints
+ * the returned JSON/CANCELED to stdout.
  */
 export function buildPickerScript(initialDir: string | undefined): string {
   const esc = (s: string) => s.replace(/'/g, "''")
   const lines = [
-    // -EncodedCommand runs without a console, so stdout falls back to the
-    // system ANSI codepage (GBK on zh-CN) which corrupts non-ASCII paths.
     '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
     'Add-Type -AssemblyName System.Windows.Forms',
-    // Without this, an OpenFileDialog shown as the process's first UI element
-    // blocks without ever creating a visible window (pwsh WinForms quirk).
-    '[System.Windows.Forms.Application]::EnableVisualStyles()',
-    '$d = [System.Windows.Forms.OpenFileDialog]::new()',
-    // Force the modern Explorer-style dialog. The default is true, but under
-    // pwsh's non-interactive shell it can silently fall back to the legacy
-    // flat list; being explicit keeps the picker looking like the OS dialog
-    // (and like Electron apps' native pickers).
-    '$d.AutoUpgradeEnabled = $true',
-    '$d.Multiselect = $true',
-    "$d.Title = '选择文件'",
-    "$d.Filter = '所有文件 (*.*)|*.*'",
-    '$d.RestoreDirectory = $true',
+    `Add-Type -TypeDefinition @'\n${COM_INTEROP}\n'@`,
   ]
   if (initialDir !== undefined) {
     const quoted = `'${esc(initialDir)}'`
-    lines.push(`if (Test-Path -LiteralPath ${quoted}) { $d.InitialDirectory = ${quoted} }`)
+    lines.push(
+      `if (Test-Path -LiteralPath ${quoted}) { [FpPicker]::Show(${quoted}) } else { [FpPicker]::Show($null) }`,
+    )
+  } else {
+    lines.push('[FpPicker]::Show($null)')
   }
-  lines.push(
-    '$r = $d.ShowDialog()',
-    "if ($r -eq [System.Windows.Forms.DialogResult]::OK) { @($d.FileNames) | ConvertTo-Json -Compress } else { 'CANCELED' }",
-  )
   return lines.join('\n')
 }
 
