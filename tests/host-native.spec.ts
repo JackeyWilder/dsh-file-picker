@@ -5,6 +5,7 @@ describe('buildPickerScript', () => {
   it('emits a multi-select OpenFileDialog with our copy', () => {
     const script = buildPickerScript(undefined)
     expect(script).toContain('[System.Windows.Forms.OpenFileDialog]::new()')
+    expect(script).toContain('[System.Windows.Forms.Application]::EnableVisualStyles()')
     expect(script).toContain('$d.Multiselect = $true')
     expect(script).toContain("$d.Title = '选择文件'")
     expect(script).toContain("$d.Filter = '所有文件 (*.*)|*.*'")

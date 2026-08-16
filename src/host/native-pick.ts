@@ -17,6 +17,9 @@ export function buildPickerScript(initialDir: string | undefined): string {
   const esc = (s: string) => s.replace(/'/g, "''")
   const lines = [
     'Add-Type -AssemblyName System.Windows.Forms',
+    // Without this, an OpenFileDialog shown as the process's first UI element
+    // blocks without ever creating a visible window (pwsh WinForms quirk).
+    '[System.Windows.Forms.Application]::EnableVisualStyles()',
     '$d = [System.Windows.Forms.OpenFileDialog]::new()',
     '$d.Multiselect = $true',
     "$d.Title = '选择文件'",
