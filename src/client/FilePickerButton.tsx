@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { nativePick } from './api.js'
-import { addFiles } from './rail.js'
+import { addFiles, clear } from './rail.js'
 import { lastDirOf } from './text.js'
 
 const LAST_DIR_KEY = 'dsh-file-picker.lastDir'
@@ -22,6 +22,10 @@ export function FilePickerButton() {
       if (!result.canceled && result.paths.length > 0) {
         const lastDir = lastDirOf(result.paths)
         if (lastDir !== undefined) localStorage.setItem(LAST_DIR_KEY, lastDir)
+        // New selection replaces the previous one (rather than accumulating),
+        // so the rail always mirrors exactly the files picked in the last
+        // dialog interaction.
+        clear()
         addFiles(result.paths)
       }
     } catch (error) {
