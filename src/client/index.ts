@@ -1,12 +1,14 @@
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import { AttachmentRail } from './AttachmentRail.js'
 import { FilePickerButton } from './FilePickerButton.js'
 
 export const inject = ['slots']
 
 /**
  * ui-conversation 的 SlotMap 合并未进入本编译单元，`'conversation.input.left'`
- * 不在 `keyof SlotMap`（只见 runtime 声明的 'root'）。按简报注记用带可选链的
- * 降级写法，运行时不改语义。systemPrompt 注入已移至宿主侧（host apply）。
+ * / `'conversation.input.dock'` 不在 `keyof SlotMap`（只见 runtime 声明的
+ * 'root'）。按简报注记用带可选链的降级写法，运行时不改语义。systemPrompt 注入
+ * 已移至宿主侧（host apply）。
  */
 type LooseSlots = {
   inject(key: string, callback: () => unknown): () => void
@@ -20,4 +22,9 @@ export function apply(ctx: ClientContext): void {
     id: 'dsh-file-picker',
     order: 5,
   }, FilePickerButton))
+  slots?.inject?.('conversation.input.dock', () => slots?.register({
+    name: 'conversation.input.dock',
+    id: 'dsh-file-picker-attachments',
+    order: 0,
+  }, AttachmentRail))
 }

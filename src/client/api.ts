@@ -19,3 +19,20 @@ export async function nativePick(initialDir: string | undefined): Promise<Native
   }
   return body as NativePickResult
 }
+
+/**
+ * Push staged files into the session as an injected plugin context message
+ * (send-time injection, host route `/api/dsh-file-picker/inject`). Throws a
+ * readable error on a non-ok response, mirroring `nativePick`.
+ */
+export async function injectFiles(sessionId: string, paths: readonly string[]): Promise<void> {
+  const response = await fetch('/api/dsh-file-picker/inject', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sessionId, files: paths.map((path) => ({ path })) }),
+  })
+  const body = (await response.json()) as { error?: string }
+  if (!response.ok) {
+    throw new Error(body.error ?? `inject failed: HTTP ${response.status}`)
+  }
+}

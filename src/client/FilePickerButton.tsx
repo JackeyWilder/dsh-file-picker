@@ -1,21 +1,17 @@
 import { useState } from 'react'
 import { nativePick } from './api.js'
-import { buildPathInjection, lastDirOf } from './text.js'
+import { addFiles } from './rail.js'
+import { lastDirOf } from './text.js'
 
 const LAST_DIR_KEY = 'dsh-file-picker.lastDir'
 
-export interface FilePickerButtonProps {
-  inputActions?: { setDraft(text: string): void }
-  useInput?: { (selector: (s: { draft: string }) => string): string }
-  sessionId?: string
-}
-
-/** Tool-row button: show the native Windows file dialog, inject @path: refs. */
-export function FilePickerButton({ inputActions, useInput }: FilePickerButtonProps) {
+/**
+ * Tool-row button: show the native Windows file dialog and stage the selected
+ * files into the attachment rail (`rail.addFiles`); the rail's send button
+ * injects them as context at send time. Draft is no longer mutated here.
+ */
+export function FilePickerButton() {
   const [picking, setPicking] = useState(false)
-  const draft = useInput ? useInput((s) => s.draft) : ''
-
-  if (inputActions === undefined) return null
 
   const pick = async () => {
     if (picking) return
@@ -26,7 +22,7 @@ export function FilePickerButton({ inputActions, useInput }: FilePickerButtonPro
       if (!result.canceled && result.paths.length > 0) {
         const lastDir = lastDirOf(result.paths)
         if (lastDir !== undefined) localStorage.setItem(LAST_DIR_KEY, lastDir)
-        inputActions.setDraft(buildPathInjection(result.paths, draft))
+        addFiles(result.paths)
       }
     } catch (error) {
       console.error('[dsh-file-picker] pick failed:', error)
