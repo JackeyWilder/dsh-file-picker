@@ -13,8 +13,16 @@ describe('buildPickerScript', () => {
     expect(script).toContain('[FpPicker]::Show($null)')
     expect(script).toContain('CANCELED')
   })
+  it('caches the compiled interop in %TEMP% to skip recompilation', () => {
+    const script = buildPickerScript(undefined)
+    expect(script).toContain('Add-Type -Path')
+    expect(script).toContain('Add-Type -TypeDefinition')
+    expect(script).toContain('-OutputAssembly')
+    expect(script).toContain('dsh-file-picker')
+    expect(script).not.toContain('System.Windows.Forms') // IFileOpenDialog needs no WinForms
+  })
   it('emits no initial-dir guard when initialDir is omitted', () => {
-    expect(buildPickerScript(undefined)).not.toContain('Test-Path')
+    expect(buildPickerScript(undefined)).not.toContain('Test-Path -LiteralPath')
   })
   it('emits an initial-dir guard when provided, escaping single quotes', () => {
     const script = buildPickerScript("C:\\O'Brien\\dir")

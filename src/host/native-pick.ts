@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { spawn } from 'node:child_process'
 
 export interface NativePickResult {
@@ -137,18 +140,30 @@ public static class FpPicker {
 }
 `
 
+/** Cache key: content-hashed so an interop change mints a fresh DLL. */
+const CACHE_KEY = createHash('sha1').update(COM_INTEROP).digest('hex').slice(0, 10)
+
 /**
  * Build the pwsh script that shows the native multi-select file dialog. The
- * dialog itself runs inside the Add-Type'd C# FpPicker.Show(); PowerShell
- * only guards the initial dir (Test-Path + single-quote escaping) and prints
- * the returned JSON/CANCELED to stdout.
+ * dialog runs inside the Add-Type'd C# FpPicker.Show(). Compiling the ~80-line
+ * interop on every pick costs ~1s (csc), so the compiled assembly is cached in
+ * %TEMP%\dsh-file-picker\ and loaded with Add-Type -Path on later picks;
+ * PowerShell only guards the initial dir and prints the JSON/CANCELED.
  */
 export function buildPickerScript(initialDir: string | undefined): string {
   const esc = (s: string) => s.replace(/'/g, "''")
+  const cacheDir = join(tmpdir(), 'dsh-file-picker')
+  const cacheDll = join(cacheDir, `FpPicker-${CACHE_KEY}.dll`)
+  const cacheDirEsc = esc(cacheDir)
+  const cacheDllEsc = esc(cacheDll)
   const lines = [
     '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
-    'Add-Type -AssemblyName System.Windows.Forms',
-    `Add-Type -TypeDefinition @'\n${COM_INTEROP}\n'@`,
+    `if (Test-Path '${cacheDllEsc}') {`,
+    `  Add-Type -Path '${cacheDllEsc}'`,
+    `} else {`,
+    `  New-Item -ItemType Directory -Force -Path '${cacheDirEsc}' | Out-Null`,
+    `  Add-Type -TypeDefinition @'\n${COM_INTEROP}\n'@ -OutputAssembly '${cacheDllEsc}'`,
+    `}`,
   ]
   if (initialDir !== undefined) {
     const quoted = `'${esc(initialDir)}'`
