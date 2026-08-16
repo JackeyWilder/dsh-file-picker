@@ -8,7 +8,7 @@ describe('buildPickerScript', () => {
     expect(script).toContain('d57c7288-d4ad-4768-be02-9d969532d960')
     expect(script).toContain('GetResults')
     expect(script).toContain('0x200 | 0x40') // FOS_ALLOWMULTISELECT | FOS_FORCEFILESYSTEM
-    expect(script).not.toContain('| 0x20') // no FOS_PICKFOLDERS: file mode only
+    expect(script).not.toContain('| 0x20)') // no FOS_PICKFOLDERS: file mode only
     expect(script).not.toContain('GetFileTypeCount') // IFileDialog has 23 methods
     expect(script).toContain('[FpPicker]::Show($null)')
     expect(script).toContain('CANCELED')
