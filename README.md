@@ -2,9 +2,16 @@
 
 为 dsh web 添加"选择工作区外文件"入口：输入框工具行按钮 → 原生 Windows 文件对话框（任意目录、多选）→ 选中文件在输入框上方形成附件卡片条；发送时由宿主注入上下文消息（绝对路径清单），agent 用 read 工具读取。
 
+> ⚠️ **平台**：文件对话框基于 PowerShell 7（`pwsh`）+ Windows Forms，当前仅支持 **Windows**（需要系统已安装 PowerShell 7）。
+> ⚠️ **兼容性**：依赖 dsh 的 `agent.inject` / `agent/inbox/inserted` 等半公开接口，按 **dsh rc.6（2026-08）** 验证。dsh 升级后如有异常，请用 [诊断](#诊断) 一节自检。
+
 ## 安装
 
 ```bash
+# 方式一：npm 包
+dsh plugin --profile web add @jackeywilder/dsh-file-picker
+
+# 方式二：本地 link（开发）
 dsh plugin --profile web add link:"<本包路径>"
 ```
 
@@ -16,6 +23,12 @@ dsh plugin --profile web add link:"<本包路径>"
 4. 用主输入框正常发送消息——宿主检测到消息进入会话（`agent/inbox/inserted`）后，先把所选文件的绝对路径清单注入当前会话上下文，消息随即送达；发送成功后卡片条清空（覆盖打字发送、斜杠命令、steer 等所有发送路径）；
 5. 对话中出现 "Context injection" 上下文行（附加了文件，请按需读取 + 绝对路径清单），agent 按其中的路径用 read 工具读取文件内容。
 
+## 诊断
+
+- 宿主日志：`<DSH_HOME>/logs/dsh-file-picker.log`（默认 `C:\Users\<你>\.dsh\logs\`），记录启动 / 暂存 / 消息进入 / 注入全链路，超过 1 MB 自动轮转为 `.log.1`；可随时安全删除。
+- 状态路由：`GET http://localhost:<dsh端口>/api/dsh-file-picker/status` 返回插件版本与当前暂存清单。
+- 日志中如果 `inbox/inserted ... session=undefined`，说明宿主加载的是旧 bundle——请完全退出 dsh 后重启。
+
 ## 开发
 
 ```bash
@@ -26,3 +39,5 @@ npx vitest run
 ## 安全
 
 宿主侧路由仅接受 loopback 请求（`isLoopbackRequest` 校验 remoteAddress/Host/sec-fetch-site/Origin）；只提供只读原生文件选择能力，不读文件内容、不写文件。选择过程不留 sidecar 残留：pwsh 以 `-EncodedCommand` 内联执行对话框脚本，不落临时脚本文件，对话框关闭后进程即被终止。
+
+**隐私**：选中的文件路径会写入上述诊断日志（含用户名等路径信息），且注入到会话上下文后 agent 可读取。请勿用于机密文件，或自行删除日志。
