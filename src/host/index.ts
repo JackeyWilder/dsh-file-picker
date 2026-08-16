@@ -3,6 +3,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { isLoopbackRequest, readJsonBody } from './http.js'
 import { buildInjectSource, buildInjectText, type AttachedFile } from './inject.js'
+import { hostLog, PLUGIN_VERSION } from './log.js'
 import { runNativePicker } from './native-pick.js'
 
 export const name = '@jackeywilder/dsh-file-picker'
@@ -60,6 +61,8 @@ function parseFiles(body: Record<string, unknown> | undefined): AttachedFile[] {
 }
 
 export function apply(ctx: Context): void {
+  hostLog('host apply: plugin starting')
+
   ctx.effect(() => (ctx as unknown as { systemPrompt: SystemPromptFace }).systemPrompt.section({
     name: 'dsh-file-picker',
     order: 200,
@@ -77,14 +80,23 @@ export function apply(ctx: Context): void {
   // paths as model-facing context for the next pre-step of that same turn, so
   // the context message always rides the message that just went out.
   ;(ctx as unknown as AgentEventsFace).on('agent/inbox/inserted', ({ agent, message }) => {
+    hostLog(`inbox/inserted: kind=${message.source.kind} session=${agent.sessionId}`)
     if (message.source.kind !== 'user') return
     const pending = stagedFiles.get(agent.sessionId)
-    if (pending === undefined || pending.length === 0) return
+    if (pending === undefined || pending.length === 0) {
+      hostLog(`inbox/inserted: nothing staged for session=${agent.sessionId}`)
+      return
+    }
     stagedFiles.delete(agent.sessionId)
-    agent.inject(createUserMessage({
-      source: buildInjectSource(),
-      content: [{ type: 'text', text: buildInjectText(pending) }],
-    }))
+    try {
+      agent.inject(createUserMessage({
+        source: buildInjectSource(),
+        content: [{ type: 'text', text: buildInjectText(pending) }],
+      }))
+      hostLog(`inbox/inserted: injected ${pending.length} file(s) for session=${agent.sessionId}`)
+    } catch (error) {
+      hostLog(`inbox/inserted: inject failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
   })
 
   ctx.effect(() => ctx.webServer.register({
@@ -137,8 +149,10 @@ export function apply(ctx: Context): void {
       const files = parseFiles(body)
       if (files.length === 0) {
         stagedFiles.delete(sessionId)
+        hostLog(`stage: cleared session=${sessionId}`)
       } else {
         stagedFiles.set(sessionId, files)
+        hostLog(`stage: ${files.length} file(s) for session=${sessionId}: ${files.map((f) => f.path).join(' | ')}`)
       }
       writeJson(res, 200, { ok: true })
     },
@@ -164,7 +178,28 @@ export function apply(ctx: Context): void {
         return
       }
       stagedFiles.delete(sessionId)
+      hostLog(`unstage: session=${sessionId}`)
       writeJson(res, 200, { ok: true })
     },
   }), 'dsh-file-picker: unstage route')
+
+  // Diagnostic: report the loaded plugin version and the current staging map,
+  // so a session export plus this response can localize any pipeline break.
+  ctx.effect(() => ctx.webServer.register({
+    kind: 'exact',
+    path: '/api/dsh-file-picker/status',
+    handler: async (req: IncomingMessage, res: ServerResponse) => {
+      if (!isLoopbackRequest(req)) {
+        writeJson(res, 403, { error: 'forbidden: loopback-only' })
+        return
+      }
+      writeJson(res, 200, {
+        version: PLUGIN_VERSION,
+        staged: [...stagedFiles.entries()].map(([sessionId, files]) => ({
+          sessionId,
+          files: files.map((f) => f.path),
+        })),
+      })
+    },
+  }), 'dsh-file-picker: status route')
 }
