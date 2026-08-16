@@ -2,32 +2,26 @@ import { describe, it, expect } from 'vitest'
 import { buildPickerScript, parsePickerOutput } from '../src/host/native-pick.js'
 
 describe('buildPickerScript', () => {
-  it('embeds the C# IFileOpenDialog interop in pure file mode', () => {
+  it('emits a multi-select OpenFileDialog with our copy', () => {
     const script = buildPickerScript(undefined)
-    expect(script).toContain('IFileOpenDialog')
-    expect(script).toContain('d57c7288-d4ad-4768-be02-9d969532d960')
-    expect(script).toContain('GetResults')
-    expect(script).toContain('0x200 | 0x40') // FOS_ALLOWMULTISELECT | FOS_FORCEFILESYSTEM
-    expect(script).not.toContain('| 0x20)') // no FOS_PICKFOLDERS: file mode only
-    expect(script).not.toContain('GetFileTypeCount') // IFileDialog has 23 methods
-    expect(script).toContain('[FpPicker]::Show($null)')
+    expect(script).toContain('[System.Windows.Forms.OpenFileDialog]::new()')
+    expect(script).toContain('[System.Windows.Forms.Application]::EnableVisualStyles()')
+    expect(script).toContain('$d.AutoUpgradeEnabled = $true')
+    expect(script).toContain('$d.Multiselect = $true')
+    expect(script).toContain("$d.Title = '选择文件'")
+    expect(script).toContain("$d.Filter = '所有文件 (*.*)|*.*'")
     expect(script).toContain('CANCELED')
   })
-  it('caches the compiled interop in %TEMP% to skip recompilation', () => {
-    const script = buildPickerScript(undefined)
-    expect(script).toContain('Add-Type -Path')
-    expect(script).toContain('Add-Type -TypeDefinition')
-    expect(script).toContain('-OutputAssembly')
-    expect(script).toContain('dsh-file-picker')
-    expect(script).not.toContain('System.Windows.Forms') // IFileOpenDialog needs no WinForms
+  it('wraps FileNames in @() so a single-file pick emits a JSON array', () => {
+    expect(buildPickerScript(undefined)).toContain('@($d.FileNames)')
   })
-  it('emits no initial-dir guard when initialDir is omitted', () => {
-    expect(buildPickerScript(undefined)).not.toContain('Test-Path -LiteralPath')
+  it('emits no InitialDirectory when initialDir is omitted', () => {
+    expect(buildPickerScript(undefined)).not.toContain('InitialDirectory')
   })
-  it('emits an initial-dir guard when provided, escaping single quotes', () => {
+  it('emits an InitialDirectory guard when provided, escaping single quotes', () => {
     const script = buildPickerScript("C:\\O'Brien\\dir")
     expect(script).toContain("Test-Path -LiteralPath 'C:\\O''Brien\\dir'")
-    expect(script).toContain("[FpPicker]::Show('C:\\O''Brien\\dir')")
+    expect(script).toContain("$d.InitialDirectory = 'C:\\O''Brien\\dir'")
   })
 })
 
