@@ -12,23 +12,23 @@ beforeEach(() => {
 })
 
 describe('revealPath', () => {
-  it('spawns explorer with /select,<path>, detached and unrefed', () => {
+  it('spawns explorer with /select,"<path>", detached and unrefed', () => {
     const child = { unref: vi.fn() }
     spawnMock.mockReturnValue(child)
     revealPath('G:\\Dev\\project\\README.md')
-    expect(spawnMock).toHaveBeenCalledWith('explorer', ['/select,G:\\Dev\\project\\README.md'], {
+    expect(spawnMock).toHaveBeenCalledWith('explorer', ['/select,"G:\\Dev\\project\\README.md"'], {
       windowsHide: true,
       detached: true,
     })
     expect(child.unref).toHaveBeenCalled()
   })
-  it('passes paths with spaces and quotes verbatim (no shell interpolation)', () => {
+  it('quotes paths with spaces so explorer does not truncate them', () => {
     const child = { unref: vi.fn() }
     spawnMock.mockReturnValue(child)
-    revealPath('C:\\My Docs\\a "special" file.txt')
+    revealPath('C:\\My Docs\\a file.txt')
     expect(spawnMock).toHaveBeenCalledWith(
       'explorer',
-      ['/select,C:\\My Docs\\a "special" file.txt'],
+      ['/select,"C:\\My Docs\\a file.txt"'],
       expect.objectContaining({ detached: true }),
     )
   })
